@@ -1,0 +1,377 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :host {
+    color: #18181b;
+    font-family:
+      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      "Segoe UI", sans-serif;
+    font-size: 13px;
+    line-height: 1.45;
+    letter-spacing: 0;
+
+    /* Shadcn UI Variables */
+    --background: 210 25% 94%;
+    --foreground: 222 24% 14%;
+    --card: 210 25% 96%;
+    --card-foreground: 222 24% 14%;
+    --popover: 210 25% 96%;
+    --popover-foreground: 222 24% 14%;
+    --primary: 224 32% 28%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 22% 91%;
+    --secondary-foreground: 222 24% 22%;
+    --muted: 210 22% 91%;
+    --muted-foreground: 216 13% 38%;
+    --accent: 210 22% 91%;
+    --accent-foreground: 222 24% 22%;
+    --destructive: 0 76% 56%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 18% 82%;
+    --input: 214 18% 82%;
+    --ring: 224 32% 28%;
+    --radius: calc(0.5 * var(--webpage-summary-panel-srem));
+
+    /*
+     * Reference unit (16px) for every size in this stylesheet. rem is unsafe
+     * here: inside a Shadow DOM, rem resolves against the HOST PAGE's <html>
+     * root font-size rather than this :host, so sites that override it (rem
+     * layouts like `html { font-size: 62.5% }`, a11y font scaling) would
+     * rescale the whole panel. Sizes are therefore written as
+     * calc(N * var(--webpage-summary-panel-srem)).
+     */
+    /* webpage-summary default CSS variables */
+    --webpage-summary-panel-srem: 16px;
+    --webpage-summary-panel-width: 30em;
+    --webpage-summary-panel-dialog-max-height: 30em;
+    --webpage-summary-panel-background: hsl(210 30% 98%);
+    --webpage-summary-panel-top: 4em;
+    --webpage-summary-panel-right: 4em;
+    --webpage-summary-panel-bottom: unset;
+    --webpage-summary-panel-left: unset;
+    --webpage-summary-calc-scale: 100%;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  form {
+    margin: 0;
+    padding: 0;
+  }
+
+  :host(.dark) {
+    --background: 240 7% 10%;
+    --foreground: 210 20% 94%;
+    --card: 240 7% 12%;
+    --card-foreground: 210 20% 94%;
+    --popover: 240 7% 12%;
+    --popover-foreground: 210 20% 94%;
+    --primary: 210 40% 85%;
+    --primary-foreground: 240 8% 10%;
+    --secondary: 240 5% 19%;
+    --secondary-foreground: 210 20% 94%;
+    --muted: 240 5% 19%;
+    --muted-foreground: 220 10% 68%;
+    --accent: 240 5% 19%;
+    --accent-foreground: 210 20% 94%;
+    --destructive: 0 50% 36%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 4% 23%;
+    --input: 240 4% 23%;
+    --ring: 210 40% 85%;
+  }
+}
+.kuai-summary-panel {
+  background:
+    radial-gradient(1100px 520px at -10% -10%, hsl(var(--primary) / 0.16), transparent 58%),
+    radial-gradient(900px 420px at 110% 0%, hsl(190 70% 55% / 0.10), transparent 52%),
+    hsl(var(--background));
+}
+.kuai-message-enter {
+  animation: kuai-message-enter 260ms ease-out both;
+}
+@keyframes kuai-message-enter {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kuai-message-enter { animation: none; }
+}
+.kuai-summary-panel > header {
+  min-height: calc(2.65 * var(--webpage-summary-panel-srem));
+  background: hsl(var(--background) / 0.82);
+  backdrop-filter: blur(14px);
+  border-color: hsl(var(--border) / 0.72);
+}
+.kuai-markdown {
+  max-width: 72ch;
+  font-size: calc(0.94 * var(--webpage-summary-panel-srem));
+  line-height: 1.78;
+  letter-spacing: 0.008em;
+  color: hsl(var(--foreground) / 0.94);
+}
+.kuai-markdown > * {
+  max-width: 100%;
+}
+.kuai-markdown h2[id*="核心结论"],
+.kuai-markdown h2[id*="结论"],
+.kuai-markdown h2[id*="takeaway"] {
+  border-left-color: hsl(160 65% 38% / 0.85);
+  background: linear-gradient(90deg, hsl(160 65% 38% / 0.12), transparent 72%);
+}
+.kuai-markdown h2[id*="注意"],
+.kuai-markdown h2[id*="风险"],
+.kuai-markdown h2[id*="限制"] {
+  border-left-color: hsl(38 90% 48% / 0.9);
+  background: linear-gradient(90deg, hsl(38 90% 48% / 0.13), transparent 72%);
+}
+.kuai-markdown h2[id*="行动"],
+.kuai-markdown h2[id*="步骤"],
+.kuai-markdown h2[id*="action"] {
+  border-left-color: hsl(215 75% 52% / 0.9);
+  background: linear-gradient(90deg, hsl(215 75% 52% / 0.12), transparent 72%);
+}
+.kuai-markdown h2[id*="核心结论"] + p,
+.kuai-markdown h2[id*="结论"] + p {
+  padding: calc(0.75 * var(--webpage-summary-panel-srem)) calc(0.9 * var(--webpage-summary-panel-srem));
+  border: 1px solid hsl(160 65% 38% / 0.2);
+  border-radius: calc(0.7 * var(--webpage-summary-panel-srem));
+  background: hsl(160 65% 38% / 0.07);
+  font-weight: 500;
+}
+.kuai-markdown h2[id*="注意"] + ul,
+.kuai-markdown h2[id*="风险"] + ul,
+.kuai-markdown h2[id*="限制"] + ul {
+  padding: calc(0.65 * var(--webpage-summary-panel-srem)) calc(0.9 * var(--webpage-summary-panel-srem)) calc(0.65 * var(--webpage-summary-panel-srem)) calc(1.8 * var(--webpage-summary-panel-srem));
+  border: 1px solid hsl(38 90% 48% / 0.25);
+  border-radius: calc(0.7 * var(--webpage-summary-panel-srem));
+  background: hsl(38 90% 48% / 0.08);
+}
+.kuai-markdown > p:first-of-type {
+  font-size: calc(1 * var(--webpage-summary-panel-srem));
+}
+.kuai-markdown h1,
+.kuai-markdown h2,
+.kuai-markdown h3,
+.kuai-markdown h4 {
+  text-wrap: balance;
+}
+.kuai-markdown h2 {
+  margin-top: calc(1.45 * var(--webpage-summary-panel-srem));
+  padding: calc(0.45 * var(--webpage-summary-panel-srem)) 0 calc(0.38 * var(--webpage-summary-panel-srem)) calc(0.7 * var(--webpage-summary-panel-srem));
+  border-left: 3px solid hsl(var(--primary) / 0.65);
+  border-bottom-color: hsl(var(--border) / 0.6);
+  background: linear-gradient(90deg, hsl(var(--primary) / 0.08), transparent 72%);
+  border-radius: 0 7px 7px 0;
+}
+.kuai-markdown h3 {
+  margin-top: calc(1.2 * var(--webpage-summary-panel-srem));
+  color: hsl(var(--foreground) / 0.82);
+}
+.kuai-markdown p {
+  text-wrap: pretty;
+}
+.kuai-markdown ul,
+.kuai-markdown ol {
+  padding-left: calc(1.5 * var(--webpage-summary-panel-srem));
+}
+.kuai-markdown li {
+  padding-left: calc(0.28 * var(--webpage-summary-panel-srem));
+}
+.kuai-markdown li + li {
+  margin-top: calc(0.42 * var(--webpage-summary-panel-srem));
+}
+.kuai-markdown li::marker {
+  color: hsl(var(--primary) / 0.72);
+}
+.kuai-markdown table {
+  display: block;
+  overflow-x: auto;
+  white-space: normal;
+  border: 1px solid hsl(var(--border) / 0.85);
+  box-shadow: 0 8px 22px hsl(var(--foreground) / 0.05);
+}
+.kuai-markdown th {
+  background: hsl(var(--primary) / 0.10);
+}
+.kuai-markdown blockquote {
+  position: relative;
+  box-shadow: inset 0 0 0 1px hsl(var(--border) / 0.35);
+}
+.kuai-markdown blockquote::before {
+  content: '原文依据';
+  display: block;
+  margin-bottom: calc(0.25 * var(--webpage-summary-panel-srem));
+  color: hsl(var(--muted-foreground));
+  font-size: calc(0.68 * var(--webpage-summary-panel-srem));
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+.kuai-markdown a:hover {
+  color: hsl(var(--primary) / 0.72);
+}
+.kuai-markdown mark {
+  border-radius: 3px;
+  background: hsl(45 96% 68% / 0.42);
+}
+.kuai-markdown kbd {
+  padding: 0.12em 0.4em;
+  border: 1px solid hsl(var(--border));
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: hsl(var(--muted));
+  font-size: 0.78em;
+}
+.kuai-markdown > :first-child {
+  margin-top: 0;
+}
+.kuai-markdown > :last-child {
+  margin-bottom: 0;
+}
+.kuai-markdown h1,
+.kuai-markdown h2,
+.kuai-markdown h3,
+.kuai-markdown h4 {
+  margin: calc(1.05 * var(--webpage-summary-panel-srem)) 0 calc(0.5 * var(--webpage-summary-panel-srem));
+  font-weight: 650;
+  line-height: 1.32;
+  letter-spacing: -0.01em;
+  scroll-margin-top: calc(0.75 * var(--webpage-summary-panel-srem));
+}
+.kuai-markdown h1 {
+  font-size: calc(1.18 * var(--webpage-summary-panel-srem));
+}
+.kuai-markdown h2 {
+  font-size: calc(1.06 * var(--webpage-summary-panel-srem));
+  padding-bottom: calc(0.28 * var(--webpage-summary-panel-srem));
+  border-bottom: 1px solid hsl(var(--border) / 0.8);
+}
+.kuai-markdown h3 {
+  font-size: calc(0.95 * var(--webpage-summary-panel-srem));
+  color: hsl(var(--muted-foreground));
+}
+.kuai-markdown p {
+  margin: calc(0.55 * var(--webpage-summary-panel-srem)) 0;
+}
+.kuai-markdown a {
+  color: hsl(var(--primary));
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.kuai-markdown ul,
+.kuai-markdown ol {
+  margin: calc(0.55 * var(--webpage-summary-panel-srem)) 0;
+  padding-left: calc(1.35 * var(--webpage-summary-panel-srem));
+}
+.kuai-markdown ul {
+  list-style: disc;
+}
+.kuai-markdown ol {
+  list-style: decimal;
+}
+.kuai-markdown li {
+  margin: calc(0.28 * var(--webpage-summary-panel-srem)) 0;
+  padding-left: calc(0.2 * var(--webpage-summary-panel-srem));
+}
+.kuai-markdown li::marker {
+  color: hsl(var(--muted-foreground));
+  font-weight: 600;
+}
+.kuai-markdown blockquote {
+  margin: calc(0.8 * var(--webpage-summary-panel-srem)) 0;
+  padding: calc(0.55 * var(--webpage-summary-panel-srem)) calc(0.8 * var(--webpage-summary-panel-srem));
+  border-left: 3px solid hsl(var(--primary) / 0.5);
+  border-radius: 0 8px 8px 0;
+  background: hsl(var(--muted) / 0.5);
+  color: hsl(var(--foreground) / 0.88);
+}
+.kuai-markdown code {
+  padding: 0.1em 0.32em;
+  border: 1px solid hsl(var(--border) / 0.7);
+  border-radius: 5px;
+  background: hsl(var(--muted) / 0.7);
+  font-size: 0.82em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.kuai-markdown pre {
+  margin: calc(0.8 * var(--webpage-summary-panel-srem)) 0;
+  padding: calc(0.75 * var(--webpage-summary-panel-srem));
+  overflow: auto;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.7);
+}
+.kuai-markdown pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: calc(0.78 * var(--webpage-summary-panel-srem));
+  line-height: 1.55;
+}
+.kuai-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: calc(0.8 * var(--webpage-summary-panel-srem)) 0;
+  font-size: calc(0.8 * var(--webpage-summary-panel-srem));
+  overflow: hidden;
+  border-radius: 8px;
+}
+.kuai-markdown th,
+.kuai-markdown td {
+  border: 1px solid hsl(var(--border) / 0.9);
+  padding: calc(0.45 * var(--webpage-summary-panel-srem)) calc(0.65 * var(--webpage-summary-panel-srem));
+  text-align: left;
+  vertical-align: top;
+}
+.kuai-markdown th {
+  background: hsl(var(--muted));
+  font-weight: 650;
+}
+.kuai-markdown tr:nth-child(even) td {
+  background: hsl(var(--muted) / 0.4);
+}
+.kuai-markdown strong {
+  font-weight: 650;
+}
+.kuai-markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+.kuai-markdown hr {
+  margin: calc(0.9 * var(--webpage-summary-panel-srem)) 0;
+  border: 0;
+  border-top: 1px solid hsl(var(--border));
+}
+
+/* Phase-1 citation chips: ⟦引用:...⟧ markers rendered as clickable spans.
+   Styled here (not via Tailwind) because the HTML is built at runtime and
+   class detection would be unreliable. */
+.kuai-markdown .kuai-cite {
+  display: inline-flex;
+  align-items: baseline;
+  gap: calc(0.15 * var(--webpage-summary-panel-srem));
+  margin: 0 1px;
+  padding: 0 calc(0.35 * var(--webpage-summary-panel-srem));
+  border: 1px dashed hsl(var(--primary) / 0.45);
+  border-radius: 5px;
+  background: hsl(var(--primary) / 0.08);
+  color: hsl(var(--primary) / 0.95);
+  font-size: 0.82em;
+  line-height: 1.5;
+  vertical-align: baseline;
+  cursor: pointer;
+  user-select: text;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+.kuai-markdown .kuai-cite:hover,
+.kuai-markdown .kuai-cite:focus-visible {
+  background: hsl(var(--primary) / 0.16);
+  outline: none;
+}

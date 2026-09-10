@@ -1,0 +1,245 @@
+# Changelog
+## [2.0.0] 转为纯自用扩展
+1. fix:内置总结 Prompt 预设硬编码「请使用简体中文」，通用设置里的「摘要语言」设置形同虚设；三个预设现在统一引用 `{{summaryLanguage}}` 变量。仅新播种的 Prompt 生效，已有 Prompt 需要手动新建或删除重新播种
+2. fix: 引用溯源标记 `⟦引用:...⟧` 锁死中文字面量，摘要语言换成其他语言后标记会被模型一起翻译掉导致引用 chip 静默失效；标记格式改为语言无关的 `⟦cite:...⟧`（兼容旧版中文标记）
+3. remove: 会话恢复、摘要库、导出对话（Markdown/JSON）整套基建（`lib/chat-archive.ts`、`lib/chat-session-storage.ts`、`lib/summary-library-storage.ts`、options `/library` 路由），顺带修掉「会话按 host 存导致同站不同文章串台」的问题
+4. remove: 副本面板（多开浮动面板）与「新建面板」开关
+5. remove: 侧边栏面板形态，只保留浮动面板；`PanelContext` 整体删除，面板恒为浮动模式
+6. remove: UI 多语言机制，只保留简体中文；`lib/i18n.ts` 从 1821 行精简到 300 余行
+7. remove: Firefox 兼容分支（`declarativeNetRequest` 早退、content script 的 stream polyfill、右键菜单 `page_action`/`about:addons` 分支）
+8. remove: Chrome Web Store / GitHub Release 发布流程、`release/` 历史归档、`.github/`、演示图片与视频；`README.md` 重写为自用安装说明
+9. fix: 内置 Prompt 预设里规定的小标题仍是中文字面量（`## 核心结论` 等），把摘要语言切成英文时会与「用 English 输出」的指令自相矛盾、产出中英混杂；改为「用输出语言命名，中文只说明含义」
+10. remove: 零引用死代码 —— `ai-elements/prompt-input.tsx`（1463 行，0.8.0 删掉追问输入框后的孤儿）、`ai-elements/conversation.tsx`、`shimmer.tsx`、`ui/collapsible.tsx`、`ui/settings-card.tsx` 等，`components/ui/` 从 18 个组件降到 11 个
+11. remove: 未使用依赖 `js-tiktoken`、`markdown-it`、`eventemitter3`、`react-use`、`web-streams-polyfill`、`cmdk`、`nanoid`、`use-stick-to-bottom` 及随组件删除而失去引用的若干 `@radix-ui/*`
+12. chore: 面板与 popup 残留的硬编码英文文案改为中文（含工具栏图标悬停提示 `action.default_title`）；清理已失效的历史文档（`plan.md`、`docs/UX_OPTIMIZATION_PLAN.md`、两份历史 review 报告、`web-ext.config.ts.example`、`agent-browser.json`）
+13. test: 引入 vitest，为纯函数补 52 个用例（迁移逻辑的 `local:` 前缀不变量与幂等性、错误分类的 status 优先与 `abort` 整词匹配、token 截断四种策略、站点规则 glob、正文清洗）
+14. perf: 流式渲染不再每收到一个 chunk 就把整段文本重新 `marked.parse` 一次（长摘要下开销随长度呈二次方增长，且每帧摧毁重建 DOM）。改为首帧立即渲染 + 每 100ms 至多一次尾沿渲染，marked renderer 提为模块级单例只构造一次。注：流式过程中划词选中仍会被刷新打断，只是频率从「每 chunk」降到「每 100ms」，彻底解决需要按 markdown 块做增量 DOM 更新，未做
+15. chore: 补最小 ESLint 配置（只开 `react-hooks` 两条规则）—— 此前代码里散落着 `eslint-disable` 注释但项目根本没有 ESLint 配置；复核后删除 5 处失效注释，保留并注明自动总结 effect 那处承重的 disable
+
+## [1.6.0]
+1. fix (critical): **updating the extension no longer wipes your configuration.** The 1.4.0 migration treated WXT's `local:` area prefix as part of the real storage key, so on every upgrade it deleted the live `model-configs` / `prompt-configs` / `default-*` / `site-filter-*` / `site-customization-list` keys and rewrote them under names nothing reads — losing all models (and their API keys), prompts and site rules. Because the surviving `prompt-library-seeded` flag short-circuited the seeder, the sample prompt was not recreated either. The migration now addresses raw keys, rewrites the model list in place, **recovers data stranded by the old migration**, and re-seeds the prompt library if it was emptied
+2. fix: the popup no longer claims "this page is ready to summarize" on sites disabled by your white/blacklist — it now honors the content script's `ok` flag instead of only checking for a reply, so Summarize can no longer silently do nothing
+3. fix: saving on the options pages no longer reverts settings changed elsewhere since the page loaded (e.g. dismissing the floating ball on a page, then toggling anything in Settings, used to bring the ball back). Writes are now scoped to the fields you actually edited
+4. fix: opening or closing a second floating panel no longer clears the sidebar's page-squeeze style, which left the sidebar overlapping the page content
+5. fix: real provider errors are no longer swallowed as "stopped" — the error classifier matched the bare substring `abort` anywhere in a message, including provider response bodies, which suppressed both the toast and the header error indicator. HTTP status now takes precedence and abort matching is whole-word
+6. fix: importing a configuration file exported without API keys (the default) no longer erases your stored keys and custom headers — they are merged back in per model id
+7. fix: triggering a summary with no model (or no prompt) configured now shows an actionable error linking to settings, instead of doing nothing at all
+8. fix: conversations longer than 40 messages no longer lose their system prompt when restored — the leading system message is preserved across trimming
+9. fix: legacy V1 model rows now actually get their provider icon and base URL backfilled (the guard that enabled it could never be true); a legacy row that already has a base URL is still never rewritten
+10. fix: dragging or resizing a panel that unmounts mid-gesture no longer leaks `mousemove`/`mouseup` listeners on the page
+11. fix: the popup's Summarize button showed the *copy* action's loading spinner
+12. fix: the popup's page-status banner was hardcoded Chinese; it is now translated in all nine supported languages
+13. fix: token usage cost — the uncached input count could go negative, and the cached-token discount was hardcoded to 1/10 (correct for Anthropic, wrong for OpenAI at 1/2 and Google at 1/4)
+14. fix: the token preview highlighted the wrong region for the `back` and `middle` truncation strategies — it always visualized `front`. It now mirrors the strategy actually applied
+15. chore: remove the unreachable per-site prompt rule storage (`SitePromptRule`), which had no UI and no callers
+
+## [1.5.1]
+1. fix (critical): the Summarize button and auto-summarize were no-ops — the memoized handler froze models/prompts/page content at their mount-time empty values; it now reads live state through a per-render ref
+2. fix: config migration no longer prefers the stale legacy model list over `local:model-configs`, and never rewrites a custom baseURL just because the model name matches a preset label
+3. fix: corrupt `local:chat-sessions` rows no longer crash panel initialization/rendering — rows are validated at load and usage is coerced to numbers
+4. fix: panel init failures (prompt seeding / storage / extraction) are non-fatal — the panel stays usable and logs instead of silently half-initializing
+5. fix: context menus rebuild live when the toggle or UI language changes; seeding failures no longer dead-initialize the panel/popup
+6. fix: provider/model icons now load in the in-page panel (`llm-icons/*` is web-accessible)
+7. fix: the export dropdown portaled outside the Shadow DOM (invisible/unclickable) now renders inside the panel's shadow container
+8. fix: citation chips double-escaped phrase text (and mangled markup inside phrases) — markers are extracted before Markdown rendering and escaped exactly once, so clicks scroll to the quoted phrase reliably
+9. fix: Markdown images with javascript:/data: URLs are dropped (same whitelist as links)
+10. fix: switching model/prompt is persisted for the current session; "Clear conversation" is queued behind in-flight saves so a deleted session cannot resurrect
+11. fix: `{{currentSelection}}` is preserved when a click inside the panel collapses the page selection
+12. fix: classify UI-stream errors (no more generic "An error occurred.") and surface an error when a provider stream ends without output
+13. fix: various robustness — deferred `URL.revokeObjectURL` for downloads (Firefox), text-fragment fallback no longer clobbers SPA hash routes, underscore locale tags (`zh_TW`) resolve correctly, YAML front-matter escapes newlines, options-page URLs are resolved against the extension origin
+
+## [1.5.0]
+1. feat: restore the conversation per site — reopening the panel (or refreshing the page) brings back the current site's chat, isolated across hosts (40 messages per session, 50 hosts LRU, main panel only)
+2. feat: summary library — star a summary from the panel, then browse, search, delete, export and one-click revisit it in the new options `/library` page (max 500 entries)
+3. feat: export conversation — panel dropdown offers "Export Markdown" (front-matter header, system messages excluded), "Copy Markdown" and "Copy JSON"
+4. feat: cache extracted page content per URL with a lightweight DOM signature, so panel copies and reopened panels skip re-extraction and re-tokenization
+5. feat: friendlier errors — HTTP/CORS/timeout failures are classified (auth / rate-limit / model-not-found / timeout / permission / aborted) with actionable en/zh copy; auth errors deep-link to model settings; user-stopped streams never surface an error
+6. feat: citation traceability (phase 1) — prompts emit `⟦引用:原文短句⟧` markers, rendered as clickable chips that scroll the page back to the quoted phrase
+7. docs: record `local:chat-sessions` and `local:summary-library` storage keys in AGENTS.md
+
+## [1.4.0]
+1. fix: stop the external-trigger auto-summary abort/restart loop (trigger now fires exactly once per request)
+2. fix: honor the "Token usage" toggle when rendering usage in the summary panel
+3. fix: run the model-config migration on real `local:` storage keys and make it idempotent per version
+4. fix: keep the new-model form draft stable so a failed save no longer wipes the user's input
+5. feat: add long-input truncation strategies (keep front / keep head+tail / keep end / send as-is), selectable in General settings
+6. fix: populate the `{{currentSelection}}` prompt variable from the live page selection
+7. fix: UI-language override now reaches content scripts and the background via storage.local mirror
+8. fix: stop Mustache from HTML-escaping page content before it reaches the LLM
+9. fix: disabled (whitelist/blacklist) sites no longer answer extractText; correct the duplicate-mount guard to the real host element
+10. fix: guard useWxtStorage against an initial-snapshot overwriting a concurrent watch update
+11. fix: config export without API keys also strips model headers (potential Authorization leakage)
+12. fix: first-run prompt seeding is single-flight through the background, preventing duplicate "Sample" prompts
+13. fix: fall back when `crypto.randomUUID` is unavailable on http pages
+14. fix: replace Tailwind 4-only classes (`shadow-xs`, `backdrop-blur-xs`, `h-4.5`) with Tailwind 3 equivalents
+15. fix: remove dead `openPopupPage` message and widen the content-panel probe window on trigger
+16. fix: remove unused resize code; centralize storage-key literals on `GENERAL_SETTING_DEFINITIONS`
+17. chore: rename legacy `package-lock.json` to `kuai-kan`, drop the stale `pnpm-lock.yaml`, delete leftover `compile.log`, fix the `Commad` message-key typo
+18. docs: sync AGENTS.md storage keys, entrypoints, messaging protocol and known-issues with the code
+
+## [1.3.0]
+1. fix: summary panel fonts no longer change size across websites — Shadow DOM typography is now pinned to a fixed 16px reference (`--webpage-summary-panel-srem`) instead of page-dependent `rem` units
+2. fix: floating/sidebar panel min sizes use fixed px so the panel size stays stable regardless of the site's root font-size
+
+## [1.2.0]
+1. security: harden Markdown fallback rendering and URL validation
+2. fix: treat user cancellation as normal stream completion
+3. fix: route external summary triggers through extension messaging
+4. fix: align popup availability with site access rules
+5. fix: improve usage token and cache accounting
+
+## [1.1.0]
+1. improve: restructure summaries with conclusions, key points, and content-type-aware sections
+2. improve: enhance summary readability with visual callouts for conclusions, warnings, actions, and evidence
+3. improve: strengthen source-grounding and unsupported-information guidance
+
+## [1.0.0]
+1. release: publish the stable 1.0.0 Chrome extension artifacts
+
+## [0.8.1]
+1. fix: stop-and-restart race on the summary button
+2. fix: render assistant messages without hard-coded slice offset
+3. fix: token usage export MIME mismatch
+4. fix: sanitize markdown output before injecting HTML
+5. fix: functional storage updates now use the latest value
+6. fix: guard bridge stream finish after errors / typed finish usage
+7. fix: restore default popup after one-shot popup items
+8. fix: avoid page scroll while dragging the floating ball on touch devices
+9. fix: use Command+Shift+S on macOS to avoid clashing with Save Page
+10. chore: remove dead container components and unused imports
+
+## [0.8.0]
+1. rename project to KuaiKan
+2. beautify summary rendering and prompts; comparisons render as lists/tables
+3. remove chat input box from summary panel
+4. export/import configuration as JSON/TXT file
+
+## [0.7.7]
+1. fix: fetch model list no longer requires the config name to be filled
+2. hide reasoning chain in summary panel
+3. build: chrome-only release artifacts
+4. chore: remove dead sample code
+
+## [0.7.5] - 2026-06-10
+1. remove browser-ai provider
+2. remove cookies permissons (unused)
+
+## [0.7.3] - 2026-06-01
+Complete refactoring!
+Main features:
+1. Brand new UI, comprehensively improved user experience
+2. Sidebar mode (switching between floating panel and sidebar)
+3. Clip content by token count now (by string length before)
+4. Optimized AI providers settings, added support for response APIs
+5. Completely redesigned settings interface
+
+More:
+1. Model config supports custom body
+2. Support for fetching AI provider's models list on the model config page
+3. Token usage visualization panel
+
+
+Dependency changes:
+1. vue3 -> react
+2. ai-sdk@4.x -> ai-sdk@6.x
+3. Self-implemented chat UI -> ai-elements
+4. Self-implemented content<->background communication protocol supporting chat -> ai-sdk-ui + custom transport over connect API
+5. String counting -> token counting (brings an extra 3MB bundle size)
+ 
+
+
+
+## [0.6.2] - 2026-02-01
+feature: shadowRoot support for selectors in site customization setting. @linkecoding
+
+
+## [0.6.1] - 2025-12-01
+1. optimize the descriptions and ordering of the general settings.
+2. feature: add configuration options to enable/disable context menu items.
+3. feature: add a configuration option to allowing “Add to Selection” to send directly.
+4. update moonshot-web-ai-provider version, kimi chats are now deleted after the summary completes.
+
+## [0.6.0] - 2025-09-14
+1. switch size unit from `rem` to `--webpage-summary-panel-srem`, avoid some sites' html root font-size setting to affect the style of shadow root.
+2. feature: add `currentSelection` prompt template variable.
+
+## [0.5.0] - 2025-08-17
+1. change project structure from monorepo workspace to regular.
+2. update wxt version from 0.19 to 0.20
+3. change pnpm to bun (required by wxt@0.20)
+4. fix: in some websites (reddit, bilibili, ...), responsive css font sizes to fail.
+5. remove some console logs
+6. optimize appearance styles
+7. feature: provide config to enable/disable chatbox
+8. implement the logic for stopping summarize
+9. implenent whitelist/blacklist
+10. implement site custom selectors
+
+## [0.4.2] - 2025-07-18
+update moonshot-web-provider.
+delete chatgpt-web-provide because of the the official crackdown on such behavior.
+
+## [0.3.5] - 2025-06-08
+fix chat boxt input being affected by single-key shortcuts in sites like github. 
+
+## [0.3.3] - 2025-04-21
+
+fix model name component error in web provider config
+
+## [0.3.2] - 2025-04-20
+
+use dynamic rules to achive scecure declare.
+
+## [0.3.1] - 2025-04-20
+
+feature: support web providers.
+
+## [0.2.2] - 2025-03-25
+
+1. fix `--webpage-summary-panel-top` not working
+2. add video tutorial in welcome page
+
+## [0.2.1] - 2025-03-12
+
+1. feature: a context menu item and a command for adding selection to chat input.
+2. feature: add clear/reset for clearing all the messages in panel's dialog.
+3. feature: support creating multiple panels (for comparing summary of different models or prompts)
+4. add adaptation to SPA (Single Page Application), input page content will change when SPA change route.
+5. fix: now chatting directly without first summarizing will send messages with page context.
+6. fix: draggable functionality using `px` causing it out of view in screen adjustment situations such as changing from vertical to horizontal.
+7. fix: write to clipboar failed in page of http protocol
+8. optimize prompt item view, add prompt preset view for creating prompt with, add another two prompt presets, and with langs of `zh-CN` and `zh-TW`.
+
+## [0.1.5] - 2025-02-27
+
+1. input length calculation now does not include continuous '\n', ' '
+
+## [0.1.4] - 2025-02-27
+
+1. fix: double panel appears when trigger by action/contentMenu under `on click` permission mode
+2. add language:zh for chrome store
+3. toaster background color: transparent -> white(80%)
+4. fix: error hint not show when call llm failed.( streamText() feature changes when updating @ai-sdk version)
+5. fix: openai-compatible default baseURL has no effect.
+
+## [0.1.3] - 2025-02-26
+
+1. adaption to firefox
+2. new feature: export/import settings
+
+## [0.1.2] - 2025-02-25
+
+1. add multiple llm providers.
+2. fix `open setting` context button not work outside page
+3. fix page problems: model config list page: add i18n, use full width, model edit: query problems
+
+## [0.1.1] - 2025-02-24
+
+1. change shortcut of user chatbox: `Shift+Enter : Submit` -> `Shift+Enter: newline` and `Enter: Submit`
+2. welcome page on first install
+3. improve browser extension declaration(fix permission lacks problem in Edge)
+4. clean up some unused codes
+
+## [0.1.0] - 2025-02-23
+
+### The first fully functional version
