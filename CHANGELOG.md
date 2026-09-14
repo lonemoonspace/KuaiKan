@@ -1,5 +1,5 @@
 # Changelog
-## [Unreleased]
+## [2.1.0]
 1. fix: 点击引用 chip 跳转原文在不少页面静默失效 —— 原实现依赖 `window.find` + Scroll-to-Text Fragment，搜不到 Shadow DOM / 同源 iframe 内的文字，要求模型逐字引用（全半角标点、空白、引号、跨段换行任一不同即失败），且同文档 `:~:text=` 跳转不可靠、遇到 hash 路由直接放弃。改为自行遍历 DOM 文本节点（含 open shadow root 与同源 iframe，跳过扩展自身面板），NFKC 归一后只比对字母数字；整句不命中时退回最长命中片段（中文 ≥6 字 / 英文 ≥16 字母，且不短于原句 35%）；多处命中优先可见位置，必要时展开折叠的 `<details>`；`scrollIntoView` 支持内层滚动容器；用 CSS Custom Highlight API 高亮 4 秒，不改动页面选区（不会误触发划词总结入口）
 2. feat: 引用原文找不到时弹出提示，并把该 chip 置灰
 3. test: 为引用匹配的归一化与模糊匹配补 7 个用例
