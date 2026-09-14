@@ -41,6 +41,7 @@ const UI_MESSAGES = {
     viewChangeHint: '点击右侧的眼睛按钮查看/更改',
     tokenPreview: 'Token 预览',
     hideFloatingBall: '隐藏悬浮球',
+    citationNotFound: '没有在页面中找到这段原文，可能被改写过或内容尚未加载。',
   },
   general: {
     loadFailed: '通用设置加载失败。',

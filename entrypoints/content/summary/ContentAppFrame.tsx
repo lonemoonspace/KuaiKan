@@ -206,7 +206,10 @@ export function ContentAppFrame({ onClose, beginSummaryRequest = 0 }: ContentApp
                     {message.parts.map((part, i) => {
                       if (part.type === 'text') {
                         return (
-                          <MessageResponse key={`${message.id}-${i}`}>
+                          <MessageResponse
+                            key={`${message.id}-${i}`}
+                            onCitationNotFound={() => toast.warning(uiMessages.content.citationNotFound)}
+                          >
                             {part.text}
                           </MessageResponse>
                         );

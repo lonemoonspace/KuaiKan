@@ -375,3 +375,9 @@
   background: hsl(var(--primary) / 0.16);
   outline: none;
 }
+/* Set after a click whose phrase could not be located in the page. */
+.kuai-markdown .kuai-cite.is-missing {
+  border-color: hsl(var(--muted-foreground) / 0.45);
+  background: hsl(var(--muted) / 0.6);
+  color: hsl(var(--muted-foreground));
+}

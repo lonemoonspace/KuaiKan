@@ -414,10 +414,12 @@ export const MessageBranchPage = ({
 
 export type MessageResponseProps = HTMLAttributes<HTMLDivElement> & {
   children: string;
+  /** Called when a clicked citation chip's phrase cannot be located in the page. */
+  onCitationNotFound?: (phrase: string) => void;
 };
 
 export const MessageResponse = memo(
-  ({ className, children, ...props }: MessageResponseProps) => {
+  ({ className, children, onCitationNotFound, ...props }: MessageResponseProps) => {
     const [html, setHtml] = useState<string>('');
 
     // `children` grows on every streamed chunk. Re-`marked.parse`-ing the
@@ -497,7 +499,10 @@ export const MessageResponse = memo(
 
     // Single delegated handler for citation chips rendered via
     // dangerouslySetInnerHTML: click (or Enter/Space on the focused chip)
-    // scrolls the underlying page to the quoted phrase.
+    // scrolls the underlying page to the quoted phrase. Read the callback via
+    // a ref so the handler (and the memo comparator) stay prop-agnostic.
+    const onCitationNotFoundRef = useRef(onCitationNotFound);
+    onCitationNotFoundRef.current = onCitationNotFound;
     const handleCitationInteraction = useCallback(
       (event: ReactMouseEvent<HTMLDivElement> | ReactKeyboardEvent<HTMLDivElement>) => {
         const chip = (event.target as HTMLElement | null)?.closest?.(
@@ -512,7 +517,10 @@ export const MessageResponse = memo(
 
         event.preventDefault();
         const phrase = chip.getAttribute('data-cite-phrase');
-        if (phrase) scrollToPhrase(phrase);
+        if (!phrase) return;
+        const found = scrollToPhrase(phrase);
+        chip.classList.toggle('is-missing', !found);
+        if (!found) onCitationNotFoundRef.current?.(phrase);
       },
       [],
     );
