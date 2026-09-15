@@ -5,6 +5,7 @@ import {
   type AiSdkConnectBridgeClientMessage,
   type AiSdkConnectBridgeServerMessage,
 } from '@/lib/ai-sdk-connect-bridge';
+import { markTiming, mergeBackgroundTiming } from '@/lib/summary-timing';
 
 type AiSdkConnectTransportOptions = {
   getModelConfigId?: () => string | null;
@@ -99,7 +100,15 @@ export class AiSdkConnectTransport implements ChatTransport<UIMessage> {
           const frame = message as AiSdkConnectBridgeServerMessage;
 
           if (frame.type === 'chunk') {
+            markTiming('前台收到首个数据帧');
+            if (frame.chunk.type === 'reasoning-delta') markTiming('前台收到首个推理片段');
+            if (frame.chunk.type === 'text-delta') markTiming('前台收到首个正文片段');
             controller.enqueue(frame.chunk);
+            return;
+          }
+
+          if (frame.type === 'timing') {
+            mergeBackgroundTiming(frame.marks, frame.final);
             return;
           }
 
@@ -158,6 +167,7 @@ export class AiSdkConnectTransport implements ChatTransport<UIMessage> {
           system: this.options.getSystemMessage?.() ?? undefined,
           trigger,
         } satisfies AiSdkConnectBridgeClientMessage);
+        markTiming('前台请求已发往后台');
       },
       cancel() {
         try {

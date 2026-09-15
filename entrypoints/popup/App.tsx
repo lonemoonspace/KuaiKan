@@ -5,13 +5,18 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
   getModelDisplayIcon,
+  getModelOptionLabel,
   getModelProviderDefinition,
+  getModelVendorLabel,
+  getReasoningEffortOptions,
+  supportsReasoningEffort,
   type ModelConfigItem,
 } from '@/constants/model-settings';
 import type { PromptConfigItem } from '@/constants/prompt-settings';
 import {
   loadModelSettings,
   setDefaultModelConfig,
+  setModelReasoningEffort,
 } from '@/lib/model-settings-storage';
 import {
   loadPromptSettings,
@@ -97,6 +102,20 @@ function App() {
     await setDefaultModelConfig(id);
   };
 
+  // Switching vendor selects that vendor's first model, since a model config
+  // (not the vendor) is what actually gets persisted as the default.
+  const handleVendorChange = async (vendor: string) => {
+    const firstModel = models.find((m) => getModelVendorLabel(m) === vendor);
+    if (firstModel) await handleModelChange(firstModel.id);
+  };
+
+  const handleReasoningEffortChange = async (modelId: string, effort: string) => {
+    setModels((currentModels) =>
+      currentModels.map((m) => (m.id === modelId ? { ...m, reasoningEffort: effort } : m)),
+    );
+    await setModelReasoningEffort(modelId, effort);
+  };
+
   const handlePromptChange = async (id: string) => {
     setCurrentPromptId(id);
     await setDefaultPrompt(id);
@@ -155,6 +174,9 @@ function App() {
   };
 
   const currentModel = models.find((m) => m.id === currentModelId);
+  const currentVendor = currentModel ? getModelVendorLabel(currentModel) : '';
+  const vendors = Array.from(new Set(models.map(getModelVendorLabel)));
+  const vendorModels = models.filter((m) => getModelVendorLabel(m) === currentVendor);
 
   return (
     <main className="grid min-w-[320px] max-w-3xl gap-3 bg-background px-3 py-3">
@@ -188,12 +210,32 @@ function App() {
 
       <section className="grid gap-1.5">
         <SelectRow
+          label={messages.popup.provider}
+          value={currentVendor}
+          onChange={handleVendorChange}
+          options={vendors.map((vendor) => ({ value: vendor, label: vendor }))}
+          icon={currentModel ? <ModelIcon model={currentModel} /> : undefined}
+        />
+        <SelectRow
           label={messages.popup.model}
           value={currentModelId}
           onChange={handleModelChange}
-          options={models.map((m) => ({ value: m.id, label: m.name }))}
-          icon={currentModel ? <ModelIcon model={currentModel} /> : undefined}
+          options={vendorModels.map((m) => ({ value: m.id, label: getModelOptionLabel(m) }))}
         />
+        {currentModel && supportsReasoningEffort(currentModel.providerId) ? (
+          <SelectRow
+            label={messages.popup.reasoningEffort}
+            value={currentModel.reasoningEffort}
+            onChange={(value) => handleReasoningEffortChange(currentModel.id, value)}
+            options={[
+              { value: '', label: messages.popup.reasoningEffortDefault },
+              ...getReasoningEffortOptions(currentModel).map((level) => ({
+                value: level,
+                label: level,
+              })),
+            ]}
+          />
+        ) : null}
         <SelectRow
           label={messages.popup.prompt}
           value={currentPromptId}

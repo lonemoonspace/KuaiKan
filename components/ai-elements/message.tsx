@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { scrollToPhrase } from "@/lib/scroll-to-text";
+import { markTiming } from "@/lib/summary-timing";
 import type { UIMessage } from "ai";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import type {
@@ -448,6 +449,8 @@ export const MessageResponse = memo(
         const extracted = extractCitationPhrases(text);
         const parsed = render(extracted.text);
         setHtml(buildCitationChips(addEvidenceLabel(parsed), extracted.phrases));
+        // TEMPORARY timing instrumentation (first markdown paint handed to React).
+        if (text) markTiming('首次渲染到面板');
       });
       lastRenderAtRef.current = Date.now();
     }, []);

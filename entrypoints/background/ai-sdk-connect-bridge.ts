@@ -11,6 +11,8 @@ import { getModelConfigById } from '@/lib/model-settings-storage';
 import { classifySummaryError } from '@/lib/error-taxonomy';
 
 import { createLogger } from '@/lib/logger';
+import { timingNow } from '@/lib/summary-timing';
+import { serviceWorkerStartedAt, tokenizerLoadedAt } from './timing-bg';
 
 const logger = createLogger('background:ai-sdk-connect-bridge');
 
@@ -74,9 +76,10 @@ export function registerAiSdkConnectBridge() {
       }
 
       started = true;
+      const timingMarks: Record<string, number> = { '后台收到请求': timingNow() };
       requestId = frame.requestId;
       logger.debug(`[AI SDK Bridge] Starting stream (requestId: ${requestId})`);
-      void streamMessages(frame, abortController.signal, postMessage).finally(
+      void streamMessages(frame, abortController.signal, postMessage, timingMarks).finally(
         () => {
           logger.debug(`[AI SDK Bridge] Stream finished (requestId: ${requestId})`);
           finish();
@@ -93,11 +96,26 @@ async function streamMessages(
   request: AiSdkConnectBridgeRequest,
   abortSignal: AbortSignal,
   postMessage: (message: AiSdkConnectBridgeServerMessage) => void,
+  timingMarks: Record<string, number>,
 ) {
+  // TEMPORARY timing instrumentation, see lib/summary-timing.ts.
+  const mark = (name: string) => {
+    timingMarks[name] ??= timingNow();
+  };
+  let timingSent = false;
+  const sendTiming = (final: boolean) => {
+    if (timingSent) return;
+    timingSent = true;
+    const marks: Record<string, number> = { ...timingMarks, '后台 Service Worker 启动': serviceWorkerStartedAt };
+    if (tokenizerLoadedAt !== null) marks['后台分词器加载完成'] = tokenizerLoadedAt;
+    postMessage({ type: 'timing', marks, final });
+  };
+
   let streamFailed = false;
   try {
     logger.debug(`[AI SDK Bridge streamMessages] Fetching model config for id: ${request.modelConfigId}`);
     const modelConfig = await getModelConfigById(request.modelConfigId);
+    mark('后台读取模型配置完成');
 
     if (!modelConfig) {
       logger.error(`[AI SDK Bridge streamMessages] Model config not found for id: ${request.modelConfigId}`);
@@ -107,6 +125,7 @@ async function streamMessages(
     logger.debug(`[AI SDK Bridge streamMessages] Model config fetched:`, modelConfig.providerId, modelConfig.modelId);
     logger.debug(`[AI SDK Bridge streamMessages] Converting messages to model messages...`);
     const messages = await convertToModelMessages(request.messages);
+    mark('后台消息转换完成');
     logger.debug(`[AI SDK Bridge streamMessages] Messages converted. Ready to streamText. Messages count: ${messages.length}`);
 
     logger.debug(`[AI SDK Bridge streamMessages] Calling streamText...`);
@@ -131,6 +150,7 @@ async function streamMessages(
         streamFailed = true;
       },
     });
+    mark('后台发起模型请求');
     logger.debug(`[AI SDK Bridge streamMessages] streamText called, beginning iteration...`);
 
     let chunkCount = 0;
@@ -175,11 +195,20 @@ async function streamMessages(
         break;
       }
 
+      // `start-step` is emitted once the provider's HTTP response has begun,
+      // so it approximates time-to-response-headers.
+      if (processedChunk.type === 'start-step') mark('后台模型开始响应 (start-step)');
+      if (processedChunk.type === 'reasoning-delta') mark('后台收到首个推理片段');
+      if (processedChunk.type === 'text-delta') mark('后台收到首个正文片段');
+
       postMessage({
         type: 'chunk',
         chunk: processedChunk,
       });
+
+      if (processedChunk.type === 'text-delta') sendTiming(false);
     }
+    sendTiming(true);
 
     logger.debug(`[AI SDK Bridge streamMessages] Finished iterating stream. Total chunks: ${chunkCount}`);
     if (!streamFailed && chunkCount === 0) {

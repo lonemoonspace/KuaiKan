@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import useWxtStorage from '@/hooks/useWxtStorage';
 import { sendMessage as sendExtMessage } from '@/lib/messaging';
@@ -8,6 +8,7 @@ import {
   X,
   RefreshCw,
   Info,
+  ChevronRight,
 } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 
@@ -33,6 +34,44 @@ const formatTokens = (val: number) => {
   }
   return val.toString();
 };
+
+/**
+ * Collapsible model reasoning, closed by default. The <details> element is
+ * left uncontrolled so a user's open/close choice survives streaming
+ * re-renders. Reasoning is shown as plain text (React-escaped), never parsed
+ * as Markdown, so it adds no HTML surface and no parse cost per chunk.
+ */
+function ReasoningBlock({ text, streaming }: { text: string; streaming: boolean }) {
+  const uiMessages = getUiMessages();
+  const startedAtRef = useRef(Date.now());
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    const update = () =>
+      setElapsedSeconds(Math.round((Date.now() - startedAtRef.current) / 1000));
+    update();
+    if (!streaming) return;
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [streaming]);
+
+  const label = streaming ? uiMessages.content.reasoningStreaming : uiMessages.content.reasoningDone;
+
+  return (
+    <details className="group rounded-lg border border-border/60 bg-muted/30 text-xs text-muted-foreground">
+      <summary className="flex cursor-pointer select-none list-none items-center gap-1 px-2.5 py-1.5 [&::-webkit-details-marker]:hidden">
+        <ChevronRight size={12} className="shrink-0 transition-transform group-open:rotate-90" />
+        <span className={streaming ? 'animate-pulse' : undefined}>{label}</span>
+        <span className="opacity-70">
+          · {elapsedSeconds} 秒 · {text.length} 字
+        </span>
+      </summary>
+      <div className="max-h-80 overflow-y-auto whitespace-pre-wrap break-words border-t border-border/60 px-3 py-2 leading-relaxed">
+        {text}
+      </div>
+    </details>
+  );
+}
 
 interface ContentAppFrameProps {
   onClose: () => void;
@@ -212,6 +251,15 @@ export function ContentAppFrame({ onClose, beginSummaryRequest = 0 }: ContentApp
                           >
                             {part.text}
                           </MessageResponse>
+                        );
+                      }
+                      if (part.type === 'reasoning' && part.text) {
+                        return (
+                          <ReasoningBlock
+                            key={`${message.id}-${i}`}
+                            text={part.text}
+                            streaming={isBusy && part.state !== 'done'}
+                          />
                         );
                       }
                       return null;
