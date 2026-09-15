@@ -1,3 +1,4 @@
+import './timing-bg';
 import { browser } from 'wxt/browser';
 import {
   seedPromptLibraryInBackground,

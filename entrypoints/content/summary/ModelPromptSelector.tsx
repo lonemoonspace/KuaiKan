@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import {
   getModelProviderDefinition,
   getModelDisplayIcon,
+  getModelOptionLabel,
   type ModelConfigItem,
 } from '@/constants/model-settings';
 import type { PromptConfigItem } from '@/constants/prompt-settings';
@@ -59,7 +60,7 @@ export function ModelPromptSelector({
         >
           {models.map((m) => (
             <option key={m.id} value={m.id}>
-              {m.name}
+              {getModelOptionLabel(m)}
             </option>
           ))}
         </select>

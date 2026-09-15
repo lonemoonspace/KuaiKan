@@ -10,6 +10,7 @@ import { loadPromptSettings } from '@/lib/prompt-settings-storage';
 import { loadGeneralSettings } from '@/lib/general-settings-storage';
 import { extractWebpageContent, type WebpageContent } from '@/lib/page-extraction';
 import { getCurrentPageSelection } from '@/lib/page-selection';
+import { getSummaryLanguageName } from '@/lib/summary-language';
 import { countInputTokens, truncateByTokens } from '@/lib/token-count';
 import {
   cachePageContent,
@@ -29,6 +30,11 @@ import { getUiMessages } from '@/lib/i18n';
 import { sendMessage as sendExtMessage } from '@/lib/messaging';
 
 import { createLogger } from '@/lib/logger';
+import {
+  beginPanelTiming,
+  beginSummaryTiming,
+  markTiming,
+} from '@/lib/summary-timing';
 
 const logger = createLogger('content:useContentApp');
 
@@ -168,6 +174,7 @@ export function useContentApp() {
   useEffect(() => {
     let active = true;
     async function init() {
+      beginPanelTiming();
       // Seed through the background worker so first-run seeding never races
       // across content scripts, the popup and the options page. Seeding is
       // best-effort: a failure must not prevent the panel from loading.
@@ -176,6 +183,7 @@ export function useContentApp() {
       } catch (e) {
         logger.warn('[useContentApp] Prompt seeding failed; continuing', e);
       }
+      markTiming('面板：提示词播种 RPC 完成');
 
       try {
         const [modelSettings, promptSettings, generalSettings] = await Promise.all([
@@ -183,6 +191,7 @@ export function useContentApp() {
           loadPromptSettings(),
           loadGeneralSettings(),
         ]);
+        markTiming('面板：读取设置完成');
 
         if (!active) return;
 
@@ -204,12 +213,14 @@ export function useContentApp() {
         if (!active) return;
 
         if (cached) {
+          markTiming('面板：命中正文缓存（含 innerText 校验）');
           setPageContent(cached.content);
           if (cached.tokenCount !== null) {
             setPageContentTokenCount(cached.tokenCount);
           } else {
             countInputTokens(cached.content.textContent)
               .then((count) => {
+                markTiming('面板：token 计数 RPC 完成');
                 if (!active) return;
                 setPageContentTokenCount(count);
                 cachePageContentTokenCount(window.location.href, count);
@@ -222,12 +233,15 @@ export function useContentApp() {
               generalSettings.pageTextExtractMethod,
               document,
             );
+            markTiming('面板：正文抽取完成');
             if (!active) return;
             if (extracted) {
               cachePageContent(window.location.href, extracted);
+              markTiming('面板：写入正文缓存（innerText 签名）完成');
               setPageContent(extracted);
               countInputTokens(extracted.textContent)
                 .then((count) => {
+                  markTiming('面板：token 计数 RPC 完成');
                   if (!active) return;
                   setPageContentTokenCount(count);
                   cachePageContentTokenCount(window.location.href, count);
@@ -248,6 +262,7 @@ export function useContentApp() {
         logger.error('[useContentApp] Initialization failed', e);
       } finally {
         if (active) {
+          markTiming('面板：初始化完成');
           settingsLoadedRef.current = true;
           setInitialized(true);
         }
@@ -272,6 +287,8 @@ export function useContentApp() {
       stop();
       return;
     }
+
+    beginSummaryTiming();
 
     const {
       currentModel,
@@ -328,17 +345,19 @@ export function useContentApp() {
       const tokenLimit = isOpenAiLike
         ? currentModel.maxInputTokens
         : Math.floor(currentModel.maxInputTokens * 0.9);
+      markTiming('总结：截断 RPC 开始');
       textContent = await truncateByTokens(
         textContent,
         tokenLimit,
         settings.summaryInputExceedBehaviour,
       );
+      markTiming('总结：截断 RPC 完成');
     }
 
     const view = {
       textContent,
       articleUrl: pageContent.articleUrl,
-      summaryLanguage: settings.summaryLanguage,
+      summaryLanguage: getSummaryLanguageName(settings.summaryLanguage),
       currentSelection: getCurrentPageSelection(),
     };
 
@@ -349,6 +368,7 @@ export function useContentApp() {
         parts: [{ type: 'text', text: Mustache.render(prompt.systemMessage, view) }],
       },
     ]);
+    markTiming('总结：模板渲染完成，交给 useChat');
     await sendMessage({
       text: Mustache.render(prompt.userMessage, view),
     });

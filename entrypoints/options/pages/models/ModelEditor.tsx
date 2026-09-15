@@ -24,6 +24,8 @@ import {
   createDefaultModelDraft,
   getModelDisplayIcon,
   getModelProviderDefinition,
+  getReasoningEffortOptions,
+  supportsReasoningEffort,
   type ModelDraft,
   type ModelProviderId,
 } from '@/constants/model-settings';
@@ -159,8 +161,18 @@ export function ModelEditor({
     }
   }
 
-  function selectRemoteModel(modelId: string) {
-    updateDraft('modelId', modelId);
+  function selectRemoteModel(model: RemoteModelInfo) {
+    const nextLevels = model.reasoningEffortLevels ?? [];
+
+    setDraft((currentDraft) => ({
+      ...currentDraft,
+      modelId: model.id,
+      reasoningEffortLevels: nextLevels,
+      reasoningEffort:
+        currentDraft.reasoningEffort && !nextLevels.includes(currentDraft.reasoningEffort)
+          ? ''
+          : currentDraft.reasoningEffort,
+    }));
     setIsModelPickerOpen(false);
   }
 
@@ -514,6 +526,35 @@ export function ModelEditor({
           />
         </section>
 
+        {supportsReasoningEffort(draft.providerId) ? (
+          <section className="grid max-w-2xl gap-2 border-b pb-7">
+            <label className="text-sm font-medium" htmlFor="model-reasoning-effort">
+              <FieldLabel optional>Reasoning Effort</FieldLabel>
+            </label>
+            <select
+              className="h-9 rounded-md border bg-background px-3 text-sm shadow-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              id="model-reasoning-effort"
+              onChange={(event) =>
+                updateDraft('reasoningEffort', event.currentTarget.value)
+              }
+              value={draft.reasoningEffort}
+            >
+              <option value="">Default (don't send, provider decides)</option>
+              {getReasoningEffortOptions(draft).map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              {draft.reasoningEffortLevels.length > 0
+                ? `This model supports: ${draft.reasoningEffortLevels.join(', ')}`
+                : 'No levels were fetched for this model; the list above is a generic fallback and the provider may reject an unsupported level.'}
+              {' '}A same-named key in Extra Body JSON always overrides this.
+            </p>
+          </section>
+        ) : null}
+
         <section className="grid max-w-2xl gap-3 border-b pb-7">
           <JsonDetails
             id="model-extra-body"
@@ -677,7 +718,7 @@ function ModelPickerModal({
 }: {
   models: RemoteModelInfo[];
   onClose: () => void;
-  onSelect: (modelId: string) => void;
+  onSelect: (model: RemoteModelInfo) => void;
   selectedModelId: string;
 }) {
   return (
@@ -710,13 +751,18 @@ function ModelPickerModal({
                   : 'bg-background',
               )}
               key={model.id}
-              onClick={() => onSelect(model.id)}
+              onClick={() => onSelect(model)}
               type="button"
             >
               <span className="break-words font-medium">{model.id}</span>
               {model.label !== model.id ? (
                 <span className="break-words text-xs text-muted-foreground">
                   {model.label}
+                </span>
+              ) : null}
+              {model.reasoningEffortLevels?.length ? (
+                <span className="break-words text-xs text-muted-foreground">
+                  Reasoning effort: {model.reasoningEffortLevels.join(', ')}
                 </span>
               ) : null}
             </button>

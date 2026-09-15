@@ -5,7 +5,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createOpenResponses } from '@ai-sdk/open-responses';
 import { createOllama } from 'ollama-ai-provider';
 import type { LanguageModel } from 'ai';
-import type { ModelConfigItem } from '@/constants/model-settings';
+import { supportsReasoningEffort, type ModelConfigItem } from '@/constants/model-settings';
 
 type ProviderSettings = {
   apiKey?: string;
@@ -58,14 +58,41 @@ function createProviderSettings(config: ModelConfigItem): ProviderSettings {
   return {
     apiKey: config.apiKey || undefined,
     baseURL: config.baseURL || undefined,
-    fetch: createFetchWithExtraBody(config.extraBody),
+    fetch: createFetchWithExtraBody(config),
     headers: config.headers,
     name: config.providerId,
   };
 }
 
-function createFetchWithExtraBody(extraBody: Record<string, unknown>) {
-  if (Object.keys(extraBody).length === 0) {
+/**
+ * Config-derived body overrides: the reasoning effort param (if the provider
+ * supports it and a non-default effort is configured) plus the user's own
+ * extraBody. extraBody is spread last so a same-named key the user wrote by
+ * hand always wins over the effort param this feature injects.
+ */
+export function buildBodyOverrides(
+  config: Pick<ModelConfigItem, 'apiMode' | 'extraBody' | 'providerId' | 'reasoningEffort'>,
+): Record<string, unknown> {
+  const usesResponsesShape =
+    config.providerId === 'open-responses' ||
+    (config.providerId === 'openai' && config.apiMode === 'responses');
+
+  const effortBody: Record<string, unknown> =
+    config.reasoningEffort === '' || !supportsReasoningEffort(config.providerId)
+      ? {}
+      : usesResponsesShape
+        ? { reasoning: { effort: config.reasoningEffort } }
+        : { reasoning_effort: config.reasoningEffort };
+
+  return { ...effortBody, ...config.extraBody };
+}
+
+function createFetchWithExtraBody(
+  config: Pick<ModelConfigItem, 'apiMode' | 'extraBody' | 'providerId' | 'reasoningEffort'>,
+) {
+  const overrides = buildBodyOverrides(config);
+
+  if (Object.keys(overrides).length === 0) {
     return undefined;
   }
 
@@ -87,7 +114,7 @@ function createFetchWithExtraBody(extraBody: Record<string, unknown>) {
         ...init,
         body: JSON.stringify({
           ...parsedBody,
-          ...extraBody,
+          ...overrides,
         }),
       });
     } catch {

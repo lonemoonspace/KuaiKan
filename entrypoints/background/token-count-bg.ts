@@ -2,6 +2,7 @@ import type { SummaryInputExceedBehaviour } from '@/constants/general-settings';
 import { onMessage } from '@/lib/messaging';
 
 import { createLogger } from '@/lib/logger';
+import { markTokenizerLoaded } from './timing-bg';
 
 const logger = createLogger('background:token-count-bg');
 
@@ -18,7 +19,10 @@ function nowMs() {
 }
 
 function loadTokenizer() {
-  tokenizerPromise ??= import('gpt-tokenizer/model/gpt-5');
+  tokenizerPromise ??= import('gpt-tokenizer/model/gpt-5').then((tokenizer) => {
+    markTokenizerLoaded();
+    return tokenizer;
+  });
   return tokenizerPromise;
 }
 
