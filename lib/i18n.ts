@@ -316,7 +316,7 @@ const UI_MESSAGES = {
       '为那些自动提取内容失败的站点（如内容被 Shadow DOM 包裹的站点）添加选择器规则。',
     newRuleFallback: '新规则',
     matchPattern: '匹配规则',
-    matchPatternPlaceholder: '支持 minimatch 语法，如 www.reddit.com, *.reddit.com',
+    matchPatternPlaceholder: '支持 picomatch 语法，如 www.reddit.com, *.reddit.com',
     useShadowRoot: '穿透 Shadow DOM',
     selectorsNormal: 'CSS 选择器',
     selectorsHost: '宿主选择器',

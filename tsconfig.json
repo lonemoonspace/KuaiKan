@@ -20,7 +20,10 @@
     "hooks/**/*.tsx",
     "lib/**/*.ts",
     "lib/**/*.tsx",
-    "wxt.config.ts"
+    "wxt.config.ts",
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "vitest.config.ts"
   ],
   "exclude": ["node_modules", "reference/**", ".output"]
 }

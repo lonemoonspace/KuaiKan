@@ -8,10 +8,6 @@ import {
 } from '@/constants/model-settings';
 import type { PromptConfigItem } from '@/constants/prompt-settings';
 
-import { createLogger } from '@/lib/logger';
-
-const logger = createLogger('content:ModelPromptSelector');
-
 interface ModelPromptSelectorProps {
   models: ModelConfigItem[];
   prompts: PromptConfigItem[];

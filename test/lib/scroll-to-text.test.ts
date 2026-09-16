@@ -50,4 +50,9 @@ describe('findFuzzyMatches', () => {
     const hay = normalizeForMatch('关键结论 abc 关键结论').text;
     expect(findFuzzyMatches(hay, normalizeForMatch('关键结论').text)).toHaveLength(2);
   });
+
+  it('caps the number of returned occurrences so a pathological page cannot cause unbounded scanning', () => {
+    const hay = normalizeForMatch('关键结论 '.repeat(200)).text;
+    expect(findFuzzyMatches(hay, normalizeForMatch('关键结论').text)).toHaveLength(50);
+  });
 });

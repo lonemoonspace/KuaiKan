@@ -42,6 +42,11 @@ function decodeImportText(raw: string) {
   }
 }
 
+/** Trim + strip trailing slashes; missing/empty baseURL normalizes to ''. */
+function normalizeBaseURLForSecretMerge(value: unknown): string {
+  return typeof value === 'string' ? value.trim().replace(/\/+$/, '') : '';
+}
+
 /**
  * Merge an incoming model list with the one already in storage, preserving
  * `apiKey` / `headers` for models the import does not carry them for.
@@ -49,6 +54,11 @@ function decodeImportText(raw: string) {
  * The default export strips both fields, so importing such a file would
  * otherwise erase every credential the user has. Values present in the import
  * always win; only genuinely absent/empty ones fall back to local.
+ *
+ * A same-id entry only inherits the local secret when the endpoint it talks
+ * to is unchanged (same `providerId` and, once normalized, the same
+ * `baseURL`): otherwise the local key/headers were issued for a different
+ * endpoint and must not be silently carried over to the imported one.
  */
 export function mergeModelSecrets(currentValue: unknown, incomingValue: unknown): unknown {
   if (!Array.isArray(incomingValue) || !Array.isArray(currentValue)) {
@@ -68,6 +78,11 @@ export function mergeModelSecrets(currentValue: unknown, incomingValue: unknown)
     const incoming = item as Record<string, unknown>;
     const local = typeof incoming.id === 'string' ? localById.get(incoming.id) : undefined;
     if (!local) return item;
+
+    const sameProvider = incoming.providerId === local.providerId;
+    const sameBaseURL =
+      normalizeBaseURLForSecretMerge(incoming.baseURL) === normalizeBaseURLForSecretMerge(local.baseURL);
+    if (!sameProvider || !sameBaseURL) return item;
 
     const merged: Record<string, unknown> = { ...incoming };
 

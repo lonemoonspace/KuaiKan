@@ -9,8 +9,8 @@
 
 ## 构建与发布
 
-本项目纯自用，不上架 Chrome Web Store、不发 GitHub Release。「发布」只指在本地归档一份
-可回滚的 zip。
+本项目纯自用，不上架 Chrome Web Store。「发布」指在本地归档一份可回滚的 zip，随后提交、
+打 tag 并推送到 GitHub，发一个 GitHub Release 存档（不涉及应用商店审核）。
 
 日常开发只需：
 
@@ -28,10 +28,14 @@
 5. `npm run zip`，产出 `.output/kuai-kan-<version>-chrome.zip`
 6. 归档：`mkdir -p release/<version>` 并把 zip 拷进去
 7. 校验：解开 zip 确认里面 `manifest.json` 的 `version` 与目标版本一致
+8. 提交、打 tag `v<version>`、推送到 GitHub（`origin` = github.com/lonemoonspace/KuaiKan）
+9. 用 `gh release create v<version> release/<version>/kuai-kan-<version>-chrome.zip` 发
+   GitHub Release，说明取自 `CHANGELOG.md` 对应版本条目
 
 最终保留两份产物：
 
-- 压缩包 `release/<version>/kuai-kan-<version>-chrome.zip`（归档 / 回滚用）
+- 压缩包 `release/<version>/kuai-kan-<version>-chrome.zip`（归档 / 回滚用，同时附在
+  GitHub Release 上）
 - 解压版 `.output/chrome-mv3/`（Chrome 加载已解压扩展用）
 
 `release/` 目前**不**被 `.gitignore` 忽略；如果以后不想让归档进版本库，取消 `.gitignore`
@@ -55,8 +59,8 @@
 | 验证 | Zod |
 | 正文提取 | @mozilla/readability |
 | Markdown | marked（`components/ai-elements/message.tsx` 内动态导入，模块级单例 renderer） |
-| 测试 | Vitest（`test/`，`npm run test`） |
-| Lint | ESLint flat config，只开 `react-hooks` 两条规则（`npm run lint`） |
+| 测试 | Vitest（`test/`，`npm run test`）；`test/**/*.ts(x)` 和 `vitest.config.ts` 也在 `tsconfig.json` 的 `include` 里，`npm run compile` 一并类型检查 |
+| Lint | ESLint flat config，`react-hooks` 两条规则 + `@typescript-eslint/no-unused-vars`（`npm run lint`） |
 | 模板 | Mustache（Prompt 变量渲染） |
 | Token 计数 | gpt-tokenizer（background 动态导入，通过 `truncateByTokens*`/`countInputTokens*` RPC 服务 content） |
 | 扩展通信 | @webext-core/messaging + 自建 connect bridge |
@@ -89,7 +93,12 @@
 ```ts
 ClientFrame: { type: 'send-messages'; requestId; chatId; messages: UIMessage[] } | { type: 'abort' }
 ServerFrame:  { type: 'chunk'; chunk: UIMessageChunk } | { type: 'error'; message } | { type: 'done' }
+            | { type: 'timing'; marks: Record<string, number>; final: boolean }
 ```
+
+`timing` 帧仅在开发构建（`import.meta.env.DEV`）发送，见 `lib/summary-timing.ts`：有正文
+片段时发两帧（首个正文片段一次 `final: false`，流结束一次 `final: true`），没有正文片段
+时流结束只发一次 `final: true`。
 
 流程：content `useChat({ transport: new AiSdkConnectTransport() })` → port → background `registerAiSdkConnectBridge()` → `createLanguageModelFromConfig()` → `streamText()` → `result.toUIMessageStream()` → 逐帧发回 content。
 
@@ -108,7 +117,6 @@ ServerFrame:  { type: 'chunk'; chunk: UIMessageChunk } | { type: 'error'; messag
 | `local:default-model-id` | `string` | 当前默认模型配置 ID |
 | `local:default-prompt-id` | `string` | 当前默认 Prompt ID |
 | `local:prompt-library-seeded` | `boolean` | Prompt 库是否已播种 |
-| `local:site-prompt-rules` | `SitePromptRule[]` | 站点 Prompt 路由规则（已预留） |
 | `local:site-customization-list` | `SiteCustomizationItem[]` | 站点自定义提取规则 |
 | `local:site-filter-whitelist` / `local:site-filter-blacklist` | `WhiteList` / `BlackList` | 站点启用/禁用规则 |
 | `local:summary-lang` | `string` | 总结目标语言（`zh-CN`, `en` 等） |
@@ -117,7 +125,6 @@ ServerFrame:  { type: 'chunk'; chunk: UIMessageChunk } | { type: 'error'; messag
 | `local:log-level` | `debug/info/warn/error/silent` | 日志级别 |
 | `local:enable-floating-ball` 等布尔开关 | `boolean` | 各开关（定义见 `GENERAL_SETTING_DEFINITIONS`，含 `enable-tokan-usage-view`——拼写 TOKAN，保持兼容勿改） |
 | `local:migration-version` | `number` | 迁移幂等标记（`lib/migration.ts`） |
-| `local:webpage-summary-ui-locale` | `string` | UI 语言覆盖在 `storage.local` 的镜像（设置页选语言后，content/background 也能读到） |
 
 动态键：`local:<storageKey>-floating-state`（`PanelContainer`）、`local:right-floating-ball-top-<key>`（`RightFloatingBallContainer`）。
 
@@ -126,13 +133,15 @@ ServerFrame:  { type: 'chunk'; chunk: UIMessageChunk } | { type: 'error'; messag
 
 ## 模型配置（React 重写版）
 
-Provider 描述表：`constants/model-settings.ts`。支持：OpenAI Compatible、OpenAI、Open Responses、Anthropic、Google Generative AI、Ollama、Browser AI。
+Provider 描述表：`constants/model-settings.ts`。支持：OpenAI Compatible、OpenAI、Open Responses、Anthropic、Google Generative AI、Ollama。
 
 - Base URL 不是独立 provider，而是 provider 下的快捷 URL（OpenRouter = OpenAI Compatible + 快捷 URL）
-- `browser-ai`：特殊 provider，不展示 API Key / Base URL / extraBody / headers
 - CRUD：`lib/model-settings-storage.ts`
 - Provider factory：`lib/model-provider.ts`，`createLanguageModelFromConfig(config)`
 - extraBody / headers 按 JSON object 存储，通过 provider 自定义 fetch 合并到 JSON body
+- 供应商分组标签（`getModelVendorLabel`）和图标（`getModelDisplayIcon`）都经
+  `findBaseURLPreset` 按 host 匹配 preset（忽略协议/大小写/尾部斜杠/`/v1` 等路径差异），
+  同 host 但路径不同的多个 preset 按最长公共路径段匹配
 
 ---
 
@@ -156,5 +165,5 @@ Provider 描述表：`constants/model-settings.ts`。支持：OpenAI Compatible�
 |---|---|
 | `TOKAN` 拼写错误 | storage key `local:enable-tokan-usage-view`，重写时保持兼容，不改 key |
 | Markdown `html: true` XSS | 已核查：`MessageResponse` 对 html token 做 `escapeHtml`，链接经 `isSafeUrl` 白名单（http/https/mailto），未见直接 XSS；改动模板时仍需注意 |
-| 右键菜单开关变更不实时 | 修改后需要后台重启才一致（菜单在启动时创建） |
+| 站点黑白名单实时生效的范围 | 改动实时生效于 popup 状态（`ping`）/正文抽取（`extractText`）；但已挂载的悬浮球/面板不会在变为禁用后自动卸载，需要刷新页面才会消失 |
 | `ollama-ai-provider` 兼容性 | 仍是旧 ProviderV1 类型，通过类型强转接入 AI SDK 6，运行时兼容性待测 |

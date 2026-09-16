@@ -26,10 +26,6 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('popup:App');
 
-type ExtractResult =
-  | { ok: true; title: string; url: string; text: string }
-  | { ok: false; error?: string };
-
 function App() {
   const manifest = browser.runtime.getManifest();
   const messages = getUiMessages();

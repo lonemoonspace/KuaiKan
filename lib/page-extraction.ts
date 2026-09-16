@@ -168,9 +168,19 @@ function getReadabilityArticle(sourceDocument: Document) {
   return new Readability(documentClone as Document).parse();
 }
 
+// Set only for the duration of a single domHeuristicParseRead() call: within
+// that call the same element's innerText is read repeatedly (candidacy
+// check, metrics, link text), and innerText forces a layout reflow, so we
+// cache per element for that call and drop the cache afterwards.
+let textCache: WeakMap<Element, string> | null = null;
+
 function getElementText(element: Element) {
+  const cached = textCache?.get(element);
+  if (cached !== undefined) return cached;
   const rawText = (element as HTMLElement).innerText || element.textContent || '';
-  return cleanExtractedText(rawText);
+  const cleaned = cleanExtractedText(rawText);
+  textCache?.set(element, cleaned);
+  return cleaned;
 }
 
 function isNoiseElement(element: HTMLElement) {
@@ -368,33 +378,27 @@ export function readabilityParseRead(sourceDocument: Document = document) {
 }
 
 export function domHeuristicParseRead(sourceDocument: Document = document) {
-  const readabilityArticle = getReadabilityArticle(sourceDocument);
-  const readabilityTextLength = readabilityArticle?.textContent
-    ? cleanExtractedText(readabilityArticle.textContent).length
-    : undefined;
-  const body = sourceDocument.body;
+  textCache = new WeakMap();
+  try {
+    const body = sourceDocument.body;
 
-  if (!body) {
-    return toWebpageContent(sourceDocument, '', 'dom-heuristic', {
-      readabilityTextLength,
-    });
+    if (!body) {
+      return toWebpageContent(sourceDocument, '', 'dom-heuristic');
+    }
+
+    const bodyText = getElementText(body);
+    const bestCandidate = collectCandidateElements(sourceDocument)
+      .map((element) => ({
+        element,
+        score: scoreCandidate(element, bodyText.length),
+      }))
+      .sort((left, right) => right.score - left.score)[0];
+    const bestText = bestCandidate ? getElementText(bestCandidate.element) : '';
+
+    return toWebpageContent(sourceDocument, bestText || bodyText, 'dom-heuristic');
+  } finally {
+    textCache = null;
   }
-
-  const bodyText = getElementText(body);
-  const bestCandidate = collectCandidateElements(sourceDocument)
-    .map((element) => ({
-      element,
-      score: scoreCandidate(element, bodyText.length),
-    }))
-    .sort((left, right) => right.score - left.score)[0];
-  const bestText = bestCandidate ? getElementText(bestCandidate.element) : '';
-
-  return toWebpageContent(
-    sourceDocument,
-    bestText || bodyText,
-    'dom-heuristic',
-    { readabilityTextLength },
-  );
 }
 
 export function parsePageContent(

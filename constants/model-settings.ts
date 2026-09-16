@@ -296,6 +296,90 @@ export function createDefaultModelDraft(
   };
 }
 
+function stripTrailingSlashes(url: string): string {
+  return url.trim().replace(/\/+$/, '');
+}
+
+type ParsedPresetURL = { host: string; path: string };
+
+function parsePresetURL(url: string): ParsedPresetURL | null {
+  try {
+    const parsed = new URL(url);
+    // `URL#host` is already lower-cased; strip trailing slashes from the
+    // path so `/v1` and `/v1/` compare equal.
+    return { host: parsed.host, path: parsed.pathname.replace(/\/+$/, '') };
+  } catch {
+    return null;
+  }
+}
+
+function pathIsSegmentPrefix(shorter: string[], longer: string[]): boolean {
+  return shorter.length <= longer.length && shorter.every((seg, i) => seg === longer[i]);
+}
+
+/**
+ * Match a (providerId, baseURL) pair to the vendor's base-URL preset, if any.
+ * Grouping/icon lookups both funnel through this so a custom base URL that
+ * merely differs in trailing slash, `/v1` suffix, or protocol/case still
+ * resolves to the same vendor.
+ *
+ * Empty `baseURL` falls back to the provider's `defaultBaseURL`. Matching is
+ * host-based (case-insensitive, protocol ignored): among presets sharing the
+ * input's host, an exact path match wins; otherwise the preset whose path is
+ * the longest shared path-segment prefix with the input wins; if exactly one
+ * preset shares the host, it is returned regardless of path (same host means
+ * same vendor); if several share the host but none prefix-relates, the first
+ * one is returned. If the input URL fails to parse, falls back to a plain
+ * trimmed/trailing-slash-stripped string comparison against each preset.
+ */
+export function findBaseURLPreset(
+  providerId: ModelProviderId,
+  baseURL: string | undefined,
+): BaseURLPreset | undefined {
+  const provider = getModelProviderDefinition(providerId);
+  const presets = provider.baseURLPresets;
+  if (!presets || presets.length === 0) return undefined;
+
+  const input = baseURL || provider.defaultBaseURL;
+  if (!input) return undefined;
+
+  const inputParsed = parsePresetURL(input);
+  if (!inputParsed) {
+    const normalizedInput = stripTrailingSlashes(input);
+    return presets.find((preset) => stripTrailingSlashes(preset.url) === normalizedInput);
+  }
+
+  const candidates = presets
+    .map((preset) => ({ preset, parsed: parsePresetURL(preset.url) }))
+    .filter(
+      (candidate): candidate is { preset: BaseURLPreset; parsed: ParsedPresetURL } =>
+        candidate.parsed !== null && candidate.parsed.host === inputParsed.host,
+    );
+
+  if (candidates.length === 0) return undefined;
+  if (candidates.length === 1) return candidates[0].preset;
+
+  const exact = candidates.find((candidate) => candidate.parsed.path === inputParsed.path);
+  if (exact) return exact.preset;
+
+  const inputSegments = inputParsed.path.split('/').filter(Boolean);
+  let best: { preset: BaseURLPreset; sharedSegments: number } | null = null;
+  for (const candidate of candidates) {
+    const presetSegments = candidate.parsed.path.split('/').filter(Boolean);
+    const isPrefix =
+      pathIsSegmentPrefix(inputSegments, presetSegments) ||
+      pathIsSegmentPrefix(presetSegments, inputSegments);
+    if (!isPrefix) continue;
+    const sharedSegments = Math.min(inputSegments.length, presetSegments.length);
+    if (!best || sharedSegments > best.sharedSegments) {
+      best = { preset: candidate.preset, sharedSegments };
+    }
+  }
+  if (best) return best.preset;
+
+  return candidates[0].preset;
+}
+
 /**
  * Human-facing vendor name for grouping models. The provider id alone is too
  * coarse ("OpenAI Compatible" covers DeepSeek, OpenRouter, DashScope ...), so
@@ -304,11 +388,10 @@ export function createDefaultModelDraft(
  */
 export function getModelVendorLabel(model: Pick<ModelConfigItem, 'baseURL' | 'providerId'>): string {
   const provider = getModelProviderDefinition(model.providerId);
-  const normalize = (url: string) => url.trim().replace(/\/+$/, '');
-  const baseURL = normalize(model.baseURL || provider.defaultBaseURL);
-  const preset = provider.baseURLPresets?.find((p) => normalize(p.url) === baseURL);
+  const preset = findBaseURLPreset(model.providerId, model.baseURL);
   if (preset) return preset.label;
 
+  const baseURL = stripTrailingSlashes(model.baseURL || provider.defaultBaseURL);
   if (baseURL) {
     try {
       return new URL(baseURL).host;
@@ -334,8 +417,8 @@ export function getModelDisplayIcon(model: Pick<ModelConfigItem, 'iconPath' | 'b
   }
 
   const provider = getModelProviderDefinition(model.providerId);
-  const preset = provider.baseURLPresets?.find((p) => p.url === model.baseURL);
-  
+  const preset = findBaseURLPreset(model.providerId, model.baseURL);
+
   if (preset?.iconPath) {
     return preset.iconPath;
   }
