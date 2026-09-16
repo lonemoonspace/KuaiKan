@@ -16,6 +16,9 @@
 // view and paint it with the CSS Custom Highlight API. Highlighting never
 // touches the page selection, so it cannot trigger the "summarize selection"
 // entrance or a site's own selection popovers.
+//
+// When nothing plausible is found, we simply report failure — no
+// `window.find` fallback, so the page selection is never touched.
 
 const HIGHLIGHT_NAME = 'kuai-cite-target';
 const HIGHLIGHT_STYLE_ID = 'kuai-cite-target-style';
@@ -39,6 +42,10 @@ const MIN_FRAGMENT_LENGTH_LATIN = 16;
 // ...and it must still cover a reasonable share of the quote.
 const MIN_FRAGMENT_RATIO = 0.35;
 const CJK_PATTERN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+// A fragment that recurs dozens of times across a page (e.g. a nav item) is
+// not a meaningful citation target; cap collection so a pathological page
+// can't make matching scan unboundedly.
+const MAX_MATCH_CANDIDATES = 50;
 
 type NormalizedText = { text: string; map: number[] };
 
@@ -79,7 +86,7 @@ export function findFuzzyMatches(haystack: string, needle: string): FuzzyMatch[]
   const allOccurrences = (fragment: string): FuzzyMatch[] => {
     const results: FuzzyMatch[] = [];
     let from = 0;
-    while (from <= haystack.length) {
+    while (from <= haystack.length && results.length < MAX_MATCH_CANDIDATES) {
       const at = haystack.indexOf(fragment, from);
       if (at < 0) break;
       results.push({ start: at, end: at + fragment.length });
@@ -164,6 +171,34 @@ function buildPageIndex(): PageIndex {
     text += normalized.text;
   }
   return { text, segments };
+}
+
+// Building the page index is a full DOM walk, which is wasteful to repeat for
+// every citation chip click on an unchanged page. Cache it across calls and
+// drop the cache on the first DOM mutation observed afterwards — cheap to set
+// up, and the observer only exists while a cached index is outstanding.
+let cachedIndex: PageIndex | null = null;
+let indexObserver: MutationObserver | null = null;
+
+function invalidatePageIndex() {
+  cachedIndex = null;
+  indexObserver?.disconnect();
+  indexObserver = null;
+}
+
+function getPageIndex(): PageIndex {
+  if (cachedIndex) return cachedIndex;
+
+  invalidatePageIndex();
+  const index = buildPageIndex();
+  // Guard for test environments without MutationObserver: skip caching
+  // rather than risk ever serving a stale index.
+  if (typeof MutationObserver !== 'undefined' && document.body) {
+    cachedIndex = index;
+    indexObserver = new MutationObserver(invalidatePageIndex);
+    indexObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
+  return index;
 }
 
 /** Map a normalized offset back to (text node, source offset). */
@@ -281,25 +316,6 @@ function scrollRangeIntoView(range: Range) {
   element?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
 }
 
-function windowFindFallback(needle: string): boolean {
-  try {
-    const findWindow = window as Window & {
-      find?: (
-        text: string,
-        caseSensitive: boolean,
-        backwards: boolean,
-        wrapAround: boolean,
-        wholeWord: boolean,
-        searchInFrames: boolean,
-        showDialog: boolean,
-      ) => boolean;
-    };
-    return Boolean(findWindow.find?.(needle, false, false, true, false, true, false));
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Scroll to (and highlight) a phrase extracted from the summary inside the
  * underlying page. Returns false when nothing plausible was found.
@@ -309,8 +325,21 @@ export function scrollToPhrase(phrase: string): boolean {
   const needle = normalizeForMatch(raw).text;
   if (!needle) return false;
 
-  const index = buildPageIndex();
-  const matches = findFuzzyMatches(index.text, needle);
+  let index = getPageIndex();
+  let matches = findFuzzyMatches(index.text, needle);
+
+  // A cached index can go stale without the MutationObserver noticing: DOM
+  // changes inside a shadow root or a same-origin iframe are not observed
+  // from `document.body`. If the top match's node has since been detached,
+  // rebuild once and re-match instead of scrolling to a dead node.
+  if (matches.length) {
+    const { node } = locate(index, matches[0].start, 'start');
+    if (!node.isConnected) {
+      invalidatePageIndex();
+      index = getPageIndex();
+      matches = findFuzzyMatches(index.text, needle);
+    }
+  }
 
   let fallback: Range | null = null;
   for (const match of matches) {
@@ -331,5 +360,5 @@ export function scrollToPhrase(phrase: string): boolean {
     return true;
   }
 
-  return windowFindFallback(raw.slice(0, 160));
+  return false;
 }

@@ -1,7 +1,27 @@
 # Changelog
+## [2.2.1]
+1. fix: 首字耗时插桩（`lib/summary-timing.ts`）在 2.1.0 / 2.2.0 的发布包里常开，每次总结都往宿主页面控制台打印 `console.table`，后台还会多发 `timing` 调试帧。现在只在开发构建（`import.meta.env.DEV`）启用，发布包里整条链路不执行、不打印、不发帧
+2. fix: 耗时插桩的结束帧永远发不出去 —— 首个正文片段发帧后一次性守卫就把流结束时的 `final: true` 帧吞掉了。改为首个正文片段一帧、流结束一帧
+3. fix: popup 的供应商分组把同一厂商拆成两组（例如 `https://api.deepseek.com` 与 `https://api.deepseek.com/v1` 分别显示为「DeepSeek」和「api.deepseek.com」），切换后另一组的模型从下拉里消失；图标判定也与分组判定不一致（带尾斜杠时分组认 preset、图标不认）。新增 `findBaseURLPreset`，按 host 匹配 preset（忽略协议、大小写、尾斜杠与 `/v1` 等路径差异），分组与图标共用
+4. fix: 导入配置时，同 id 的模型若 `providerId` 或 `baseURL` 已经变了，不再从本地继承 API Key 与自定义 headers，避免把密钥带到另一个端点
+5. fix: 引用定位删掉最后的 `window.find` 兜底 —— 它会选中页面文字，可能误触发划词总结入口和站点自己的选区气泡，与「不改动页面选区」的设计相矛盾。DOM 匹配失败时直接提示找不到
+6. perf: 引用定位的页面文本索引改为缓存复用，页面 DOM 变化时自动失效（命中节点已脱离文档时重建一次），不再每点一次引用就遍历全页；精确匹配的候选位置上限 50 个
+7. perf: 「DOM 启发式」正文提取不再白跑一遍完整的 Readability（结果无人使用），同一次提取内对元素 `innerText` 做缓存，减少重复排版计算
+8. perf: 超长内容策略为「不截断」时，截断 RPC 直接返回原文，不再加载分词器并整篇编码
+9. fix: 站点黑白名单改动后，已打开标签页的 popup 状态与正文抽取立即按新规则响应；从禁用变为允许时自动挂载悬浮球（从允许变为禁用时，已显示的悬浮球/面板仍需刷新页面才会消失）
+10. chore: 存储里未知 `providerId` 或缺字段的模型行被丢弃时打一条 warn 日志（不含密钥），不再静默消失
+11. refactor: token 计数的结果类型与常量合并到 `lib/token-count-types.ts`，前后台不再各维护一份；删除若干未使用的变量与导入
+12. chore: `npm run compile` 的检查范围纳入 `test/` 与 `vitest.config.ts`；ESLint 增加 `@typescript-eslint/no-unused-vars`（warn）
+13. docs: 设置页站点规则提示「minimatch」更正为实际使用的「picomatch」；`AGENTS.md` 修正过时内容（不存在的 Browser AI provider、两个已删除的存储键、已修复的「右键菜单开关不实时」、帧协议补 `timing` 帧），发布流程改为同时推送 GitHub 并发 GitHub Release；删除已完成的 `docs/SIMPLIFY_PLAN.md` 与历史审查报告 `docs/REVIEW-2026-09-10.md`
+14. docs: 补记 2.2.0 条目漏写的用户可见改动（见下方 2.2.0 第 3-6 条）
+
 ## [2.2.0]
 1. remove: 模型设置里的「思考等级（Reasoning Effort）」整套功能 —— popup 的快捷切换下拉、模型编辑页的下拉与「该模型支持的等级」提示、远程模型列表里的 `reasoning.effort_levels` / `default_effort_level` 解析、`setModelReasoningEffort` 写入口，以及模型行上的 `reasoningEffort` / `reasoningEffortLevels` 两个字段。请求体参数现在统一走 `Extra Body JSON` 一条路，不再有「下拉选的值」与「Extra Body 里手写的同名字段」两套来源互相覆盖。需要关掉推理模型的思考时直接写进 Extra Body，例如 DeepSeek V4/V4.1-Flash：`{"thinking": {"type": "disabled"}}`。旧版本写入的模型行若带这两个遗留键，读取时会被丢弃，其余字段不受影响
 2. test: 移除 reasoning effort 的 14 个用例，并补一条回归保护 —— 旧版本写入的行带着遗留 reasoning 键时仍能正常加载、且这些键不会出现在返回结果里（用例数 107 → 93）
+3. change: 三个内置 Prompt 预设整体精简重写 —— 小标题直接写成 `## 核心结论` / `## 关键要点` / `## 详细内容` / `## 注意事项`，并注明输出语言不是中文时译成该语言；引用要求从「短语必须逐字取自原文」放宽为「短句尽量照抄原文」，与 2.1.0 引用定位改为模糊匹配配套（逐字要求既难以做到，也不再是定位成功的前提）。仅新播种的 Prompt 生效
+4. feat: popup 增加「供应商」下拉，模型按供应商分组（按 base URL 预设名区分同为 OpenAI Compatible 的 DeepSeek、OpenRouter 等），模型下拉显示「自定义名称（模型 ID）」
+5. feat: 面板里显示模型的推理过程，默认折叠，标题栏显示推理耗时与字数；推理内容按纯文本显示，不做 Markdown 解析
+6. feat: 新增首字耗时诊断插桩（`lib/summary-timing.ts`），在控制台打印从面板初始化到首字渲染的时间线（该版本在发布包里也处于开启状态，2.2.1 起仅开发构建启用）
 
 ## [2.1.0]
 1. fix: 点击引用 chip 跳转原文在不少页面静默失效 —— 原实现依赖 `window.find` + Scroll-to-Text Fragment，搜不到 Shadow DOM / 同源 iframe 内的文字，要求模型逐字引用（全半角标点、空白、引号、跨段换行任一不同即失败），且同文档 `:~:text=` 跳转不可靠、遇到 hash 路由直接放弃。改为自行遍历 DOM 文本节点（含 open shadow root 与同源 iframe，跳过扩展自身面板），NFKC 归一后只比对字母数字；整句不命中时退回最长命中片段（中文 ≥6 字 / 英文 ≥16 字母，且不短于原句 35%）；多处命中优先可见位置，必要时展开折叠的 `<details>`；`scrollIntoView` 支持内层滚动容器；用 CSS Custom Highlight API 高亮 4 秒，不改动页面选区（不会误触发划词总结入口）

@@ -11,7 +11,7 @@ import { getModelConfigById } from '@/lib/model-settings-storage';
 import { classifySummaryError } from '@/lib/error-taxonomy';
 
 import { createLogger } from '@/lib/logger';
-import { timingNow } from '@/lib/summary-timing';
+import { SUMMARY_TIMING_ENABLED, timingNow } from '@/lib/summary-timing';
 import { serviceWorkerStartedAt, tokenizerLoadedAt } from './timing-bg';
 
 const logger = createLogger('background:ai-sdk-connect-bridge');
@@ -98,14 +98,17 @@ async function streamMessages(
   postMessage: (message: AiSdkConnectBridgeServerMessage) => void,
   timingMarks: Record<string, number>,
 ) {
-  // TEMPORARY timing instrumentation, see lib/summary-timing.ts.
+  // Development-build timing instrumentation, see lib/summary-timing.ts.
   const mark = (name: string) => {
     timingMarks[name] ??= timingNow();
   };
-  let timingSent = false;
+  let firstSent = false;
+  let finalSent = false;
   const sendTiming = (final: boolean) => {
-    if (timingSent) return;
-    timingSent = true;
+    if (!SUMMARY_TIMING_ENABLED) return;
+    if (final ? finalSent : firstSent || finalSent) return;
+    if (final) finalSent = true;
+    else firstSent = true;
     const marks: Record<string, number> = { ...timingMarks, '后台 Service Worker 启动': serviceWorkerStartedAt };
     if (tokenizerLoadedAt !== null) marks['后台分词器加载完成'] = tokenizerLoadedAt;
     postMessage({ type: 'timing', marks, final });

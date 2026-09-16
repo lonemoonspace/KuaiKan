@@ -1,9 +1,11 @@
-// TEMPORARY instrumentation for diagnosing "time to first character".
+// Development-only instrumentation for diagnosing "time to first character".
 // Collects wall-clock marks from the content script and the background
 // worker into one timeline and prints a single console.table per summary.
-// Remove this file and its call sites once the investigation is done.
+// Only enabled in the `wxt` (dev) build: in release builds
+// `import.meta.env.DEV` is false, so every entry point below returns
+// immediately and nothing is executed, printed, or sent over the wire.
 
-export const SUMMARY_TIMING_ENABLED = true;
+export const SUMMARY_TIMING_ENABLED = import.meta.env.DEV;
 
 /** Wall-clock ms with sub-ms precision, comparable across extension contexts. */
 export function timingNow(): number {

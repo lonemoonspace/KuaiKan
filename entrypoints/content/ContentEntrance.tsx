@@ -5,16 +5,10 @@ import { getUiMessages } from '@/lib/i18n';
 import { onMessage } from '@/lib/messaging';
 import { PanelContainer } from '@/components/container/PanelContainer';
 import { ContentAppFrame } from '@/entrypoints/content/summary/ContentAppFrame';
-// import { useSummaryChatController } from '@/hooks/useSummaryChatController';
-import { loadGeneralSettings } from '@/lib/general-settings-storage';
 import iconUrl from '@/assets/16.png';
 import { ThemeProvider } from '@/components/theme-provider';
 import { GENERAL_SETTING_DEFINITIONS } from '@/constants/general-settings';
 import { setCurrentPageSelection } from '@/lib/page-selection';
-
-import { createLogger } from '@/lib/logger';
-
-const logger = createLogger('content:ContentEntrance');
 
 export function ContentEntrance() {
   const [enableFloatingBall, setEnableFloatingBall] = useWxtStorage<boolean>(

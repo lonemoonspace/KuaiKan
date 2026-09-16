@@ -80,7 +80,7 @@ function SettingRow({
   description,
   label,
   onChange,
-  statusLabels,
+  statusLabels: _statusLabels,
   storageKey,
   defaultValue,
 }: SettingRowProps) {

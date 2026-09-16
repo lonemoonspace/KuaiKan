@@ -28,5 +28,6 @@ export type AiSdkConnectBridgeServerMessage =
       retryable?: boolean;
     }
   | { type: 'done' }
-  // TEMPORARY: background-side timing marks, see lib/summary-timing.ts.
+  // Background-side timing marks, see lib/summary-timing.ts. Only sent in
+  // development builds.
   | { type: 'timing'; marks: Record<string, number>; final: boolean };

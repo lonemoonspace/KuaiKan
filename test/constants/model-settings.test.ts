@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  findBaseURLPreset,
+  getModelDisplayIcon,
   getModelOptionLabel,
   getModelVendorLabel,
 } from '@/constants/model-settings';
@@ -23,6 +25,51 @@ describe('getModelVendorLabel', () => {
   it('resolves an empty base URL through the provider default', () => {
     expect(getModelVendorLabel({ providerId: 'anthropic', baseURL: '' })).toBe('Anthropic');
     expect(getModelVendorLabel({ providerId: 'open-responses', baseURL: '' })).toBe('Open Responses');
+  });
+});
+
+describe('findBaseURLPreset', () => {
+  it('matches host regardless of a /v1 suffix or trailing slash', () => {
+    expect(findBaseURLPreset('openai-compatible', 'https://api.deepseek.com/v1')?.label).toBe(
+      'DeepSeek',
+    );
+    expect(findBaseURLPreset('openai-compatible', 'https://api.deepseek.com/')?.label).toBe(
+      'DeepSeek',
+    );
+  });
+
+  it('matches host case-insensitively', () => {
+    expect(findBaseURLPreset('openai-compatible', 'HTTPS://API.DEEPSEEK.COM')?.label).toBe(
+      'DeepSeek',
+    );
+  });
+
+  it('does not confuse OpenRouter with a bare-host preset on the same provider', () => {
+    expect(findBaseURLPreset('openai-compatible', 'https://openrouter.ai/api/v1/')?.label).toBe(
+      'OpenRouter',
+    );
+  });
+
+  it('returns undefined when the host matches no preset', () => {
+    expect(findBaseURLPreset('openai-compatible', 'https://proxy.example.com/v1')).toBeUndefined();
+  });
+});
+
+describe('getModelDisplayIcon', () => {
+  it('resolves the preset icon for a base URL that only differs by trailing slash', () => {
+    expect(
+      getModelDisplayIcon({ providerId: 'openai-compatible', baseURL: 'https://api.deepseek.com/', iconPath: '' }),
+    ).toBe('/llm-icons/deepseek.svg');
+  });
+
+  it('falls back to the provider icon when the host matches no preset', () => {
+    expect(
+      getModelDisplayIcon({
+        providerId: 'openai-compatible',
+        baseURL: 'https://proxy.example.com/v1',
+        iconPath: '',
+      }),
+    ).toBe('/llm-icons/openai-comp.svg');
   });
 });
 

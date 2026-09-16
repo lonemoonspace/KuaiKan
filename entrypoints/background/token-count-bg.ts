@@ -1,12 +1,30 @@
 import type { SummaryInputExceedBehaviour } from '@/constants/general-settings';
 import { onMessage } from '@/lib/messaging';
+import {
+  INPUT_TOKEN_COUNT_MODEL,
+  type InputTokenCountResult,
+  type InputTokenCountTiming,
+  type SplitTokensResult,
+  type TokenPiece,
+  type TruncateByTokensResult,
+} from '@/lib/token-count-types';
 
 import { createLogger } from '@/lib/logger';
 import { markTokenizerLoaded } from './timing-bg';
 
 const logger = createLogger('background:token-count-bg');
 
-export const INPUT_TOKEN_COUNT_MODEL = 'gpt-5';
+// Re-exported for backward compatibility with anything importing these from
+// this module; the canonical definitions live in lib/token-count-types.ts,
+// shared with the content-script-side lib/token-count.ts.
+export {
+  INPUT_TOKEN_COUNT_MODEL,
+  type InputTokenCountResult,
+  type InputTokenCountTiming,
+  type SplitTokensResult,
+  type TokenPiece,
+  type TruncateByTokensResult,
+};
 
 type Gpt5Tokenizer = typeof import('gpt-tokenizer/model/gpt-5');
 
@@ -32,7 +50,9 @@ function loadTokenizer() {
  * - front:   keep the head of the document (previous default).
  * - back:    keep the tail of the document.
  * - middle:  keep head + tail and mark the removed section.
- * - nothing: return the text untouched (let the provider decide/error).
+ *
+ * `nothing` (leave the text untouched) is handled by callers before they
+ * ever reach this function, so it is not a case here.
  */
 function applyTruncationStrategy(
   tokenizer: Tokenizer,
@@ -40,11 +60,6 @@ function applyTruncationStrategy(
   maxTokens: number,
   behaviour: SummaryInputExceedBehaviour,
 ): string {
-  if (behaviour === 'nothing') {
-    // Only reached when the caller really wants the raw text back.
-    return tokenizer.decode(tokens);
-  }
-
   if (behaviour === 'back') {
     return tokenizer.decode(tokens.slice(tokens.length - maxTokens));
   }
@@ -64,12 +79,19 @@ export async function truncateByTokens(
   maxTokens: number,
   behaviour: SummaryInputExceedBehaviour = 'front',
 ): Promise<string> {
+  if (behaviour === 'nothing') {
+    // The user opted out of truncation: skip loading/encoding entirely and
+    // let the provider decide/error on the raw text.
+    logger.info('[TokenCount] No truncation needed: behaviour is "nothing".');
+    return text;
+  }
+
   const tokenizer = await loadTokenizer();
   const tokens = tokenizer.encode(text);
   const originalLength = text.length;
   const originalTokens = tokens.length;
 
-  if (originalTokens <= maxTokens || behaviour === 'nothing') {
+  if (originalTokens <= maxTokens) {
     logger.info(`[TokenCount] No truncation needed: String length ${originalLength}, Tokens ${originalTokens}`);
     return text;
   }
@@ -81,17 +103,6 @@ export async function truncateByTokens(
 
   return truncatedText;
 }
-
-export type InputTokenCountTiming = {
-  calculateMs: number;
-  loadMs: number;
-};
-
-export type InputTokenCountResult = {
-  model: typeof INPUT_TOKEN_COUNT_MODEL;
-  tokenCount: number;
-  timing: InputTokenCountTiming;
-};
 
 export async function countInputTokens(input: string): Promise<number> {
   const tokenizer = await loadTokenizer();
@@ -118,14 +129,6 @@ export async function countInputTokensWithTiming(
     },
   };
 }
-
-export type TruncateByTokensResult = {
-  model: typeof INPUT_TOKEN_COUNT_MODEL;
-  truncatedText: string;
-  originalTokenCount: number;
-  truncatedTokenCount: number;
-  timing: InputTokenCountTiming;
-};
 
 export async function truncateByTokensWithTiming(
   input: string,
@@ -159,17 +162,6 @@ export async function truncateByTokensWithTiming(
     },
   };
 }
-
-export type TokenPiece = {
-  id: number;
-  text: string;
-};
-
-export type SplitTokensResult = {
-  model: typeof INPUT_TOKEN_COUNT_MODEL;
-  pieces: TokenPiece[];
-  timing: InputTokenCountTiming;
-};
 
 export async function splitTokensWithTiming(
   input: string,

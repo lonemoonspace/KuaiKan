@@ -20,6 +20,11 @@ vi.mock('#imports', () => ({
     setItems: async (items: Array<{ key: string; value: unknown }>) => {
       for (const item of items) mockStore.set(item.key, item.value);
     },
+    // lib/model-settings-storage.ts now imports lib/logger.ts (for the
+    // parseModels() warn logging below), which calls storage.watch/getItem
+    // at module load time; stub them like test/mocks/imports.ts does.
+    watch: (_key: string, _callback: (newValue: unknown, oldValue: unknown) => void) => () => {},
+    getItem: async (_key: string) => null,
   },
 }));
 

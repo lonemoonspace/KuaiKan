@@ -1,4 +1,4 @@
-// TEMPORARY instrumentation, see lib/summary-timing.ts.
+// Development-build instrumentation, see lib/summary-timing.ts.
 import { timingNow } from '@/lib/summary-timing';
 
 /** When this service worker instance started evaluating (cold start marker). */

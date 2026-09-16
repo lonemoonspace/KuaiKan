@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Mustache from 'mustache';
 import { toast } from 'sonner';
 import { useChat } from '@ai-sdk/react';
-import type { UIMessage } from 'ai';
 
 import { AiSdkConnectTransport } from '@/lib/ai-sdk-connect-transport';
 import { loadModelSettings } from '@/lib/model-settings-storage';

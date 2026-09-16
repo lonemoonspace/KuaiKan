@@ -1,4 +1,4 @@
-import { ChevronRight, ExternalLink } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { toast } from 'sonner';

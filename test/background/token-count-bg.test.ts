@@ -3,11 +3,10 @@ import { truncateByTokens } from '@/entrypoints/background/token-count-bg';
 
 // These exercise the real `truncateByTokens`/`applyTruncationStrategy` logic
 // against the actual gpt-tokenizer package (no mocking needed - it's pure JS
-// and has no browser-only dependency). This is where the four truncation
-// strategies described in docs/SIMPLIFY_PLAN.md actually live -- NOT in
+// and has no browser-only dependency). This is where the truncation
+// strategies (front/back/middle/nothing) actually live -- NOT in
 // lib/token-count.ts, which (on the content-script side) is just an RPC
-// wrapper around this module's message handler. See the discrepancy note in
-// the final report.
+// wrapper around this module's message handler.
 
 const LONG_TEXT = Array.from({ length: 50 }, (_, i) => `sentence number ${i}`).join('. ') + '.';
 

@@ -10,6 +10,9 @@ import {
   type ModelConfigItem,
   type ModelDraft,
 } from '@/constants/model-settings';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('lib:model-settings-storage');
 
 export type ModelSettings = {
   defaultModelId: string | null;
@@ -114,10 +117,29 @@ function normalizeModel(value: ModelConfigItem): ModelConfigItem | null {
 function parseModels(value: unknown) {
   if (!Array.isArray(value)) return [];
 
-  return value
-    .filter(isModelConfigItem)
-    .map(normalizeModel)
-    .filter((model): model is ModelConfigItem => model !== null);
+  const result: ModelConfigItem[] = [];
+  for (const item of value) {
+    if (!isModelConfigItem(item)) {
+      const record = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+      logger.warn('[parseModels] Dropping stored model with invalid shape or unknown providerId', {
+        id: typeof record.id === 'string' ? record.id : undefined,
+        providerId: record.providerId,
+      });
+      continue;
+    }
+
+    const normalized = normalizeModel(item);
+    if (!normalized) {
+      logger.warn('[parseModels] Dropping stored model missing a required field (name/modelId)', {
+        id: item.id,
+        providerId: item.providerId,
+      });
+      continue;
+    }
+
+    result.push(normalized);
+  }
+  return result;
 }
 
 function normalizeDefaultModelId(

@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
+import { storage } from '#imports';
 import { getUiMessages } from '@/lib/i18n';
 import { loadGeneralSettings } from '@/lib/general-settings-storage';
 import { parsePageContent, textsBySelectors } from '@/lib/page-extraction';
@@ -9,6 +10,7 @@ import {
   isUrlAllowed,
   loadSiteRules,
 } from '@/lib/site-rules-storage';
+import { BLACKLIST_STORAGE_KEY, WHITELIST_STORAGE_KEY } from '@/constants/site-rules';
 import { ContentEntrance } from './ContentEntrance';
 
 import { onMessage } from '@/lib/messaging';
@@ -60,6 +62,21 @@ export async function mountContentScope(ctx: ContentScriptContext) {
   const messages = getUiMessages();
 
   let urlAllowed = true;
+  // Guards against mounting the badge twice: once from the initial check
+  // below, and again from a whitelist/blacklist change that flips the site
+  // to "allowed" after the badge is already up.
+  let badgeMounted = false;
+
+  const mountBadgeOnce = async () => {
+    if (badgeMounted) return;
+    badgeMounted = true;
+    try {
+      await mountSummaryBadge(ctx);
+    } catch (e) {
+      logger.error('[ContentScope] Failed to mount summary badge', e);
+    }
+  };
+
   try {
     const { whitelist, blacklist } = await loadSiteRules();
     urlAllowed = isUrlAllowed(location, whitelist, blacklist);
@@ -68,14 +85,37 @@ export async function mountContentScope(ctx: ContentScriptContext) {
   }
 
   if (urlAllowed) {
-    try {
-      await mountSummaryBadge(ctx);
-    } catch (e) {
-      logger.error('[ContentScope] Failed to mount summary badge', e);
-    }
+    await mountBadgeOnce();
   } else {
     // logger.info('[ContentScope] site rules blocked UI mount for', location.hostname);
   }
+
+  // Site whitelist/blacklist edits in the options page must take effect on
+  // already-open tabs without a reload, so `ping`/`extractText` answer with
+  // the current rules right away. Re-evaluate `urlAllowed` whenever either
+  // list changes.
+  const refreshUrlAllowed = async () => {
+    try {
+      const { whitelist, blacklist } = await loadSiteRules();
+      urlAllowed = isUrlAllowed(location, whitelist, blacklist);
+      if (urlAllowed) {
+        await mountBadgeOnce();
+      }
+      // Going from allowed -> disabled intentionally does NOT unmount an
+      // already-mounted badge/panel here: tearing down a live React tree and
+      // its Shadow DOM host mid-session is riskier than leaving it in place
+      // until the next page load, which is when it will actually disappear.
+    } catch (e) {
+      logger.error('[ContentScope] Failed to refresh site rules', e);
+    }
+  };
+
+  const unwatchWhitelist = storage.watch(WHITELIST_STORAGE_KEY, refreshUrlAllowed);
+  const unwatchBlacklist = storage.watch(BLACKLIST_STORAGE_KEY, refreshUrlAllowed);
+  ctx.onInvalidated(() => {
+    unwatchWhitelist();
+    unwatchBlacklist();
+  });
 
   onMessage('ping', () => {
     return Promise.resolve({
