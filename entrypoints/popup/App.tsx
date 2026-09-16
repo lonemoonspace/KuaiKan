@@ -8,15 +8,12 @@ import {
   getModelOptionLabel,
   getModelProviderDefinition,
   getModelVendorLabel,
-  getReasoningEffortOptions,
-  supportsReasoningEffort,
   type ModelConfigItem,
 } from '@/constants/model-settings';
 import type { PromptConfigItem } from '@/constants/prompt-settings';
 import {
   loadModelSettings,
   setDefaultModelConfig,
-  setModelReasoningEffort,
 } from '@/lib/model-settings-storage';
 import {
   loadPromptSettings,
@@ -107,13 +104,6 @@ function App() {
   const handleVendorChange = async (vendor: string) => {
     const firstModel = models.find((m) => getModelVendorLabel(m) === vendor);
     if (firstModel) await handleModelChange(firstModel.id);
-  };
-
-  const handleReasoningEffortChange = async (modelId: string, effort: string) => {
-    setModels((currentModels) =>
-      currentModels.map((m) => (m.id === modelId ? { ...m, reasoningEffort: effort } : m)),
-    );
-    await setModelReasoningEffort(modelId, effort);
   };
 
   const handlePromptChange = async (id: string) => {
@@ -222,20 +212,6 @@ function App() {
           onChange={handleModelChange}
           options={vendorModels.map((m) => ({ value: m.id, label: getModelOptionLabel(m) }))}
         />
-        {currentModel && supportsReasoningEffort(currentModel.providerId) ? (
-          <SelectRow
-            label={messages.popup.reasoningEffort}
-            value={currentModel.reasoningEffort}
-            onChange={(value) => handleReasoningEffortChange(currentModel.id, value)}
-            options={[
-              { value: '', label: messages.popup.reasoningEffortDefault },
-              ...getReasoningEffortOptions(currentModel).map((level) => ({
-                value: level,
-                label: level,
-              })),
-            ]}
-          />
-        ) : null}
         <SelectRow
           label={messages.popup.prompt}
           value={currentPromptId}

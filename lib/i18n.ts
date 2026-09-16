@@ -273,8 +273,6 @@ const UI_MESSAGES = {
     pageUnsupported: '当前页面暂不支持内容提取',
     openOptions: '设置',
     model: '模型',
-    reasoningEffort: '思考',
-    reasoningEffortDefault: '默认',
     prompt: '提示词',
     summary: '总结',
     page: '页面',

@@ -5,7 +5,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createOpenResponses } from '@ai-sdk/open-responses';
 import { createOllama } from 'ollama-ai-provider';
 import type { LanguageModel } from 'ai';
-import { supportsReasoningEffort, type ModelConfigItem } from '@/constants/model-settings';
+import type { ModelConfigItem } from '@/constants/model-settings';
 
 type ProviderSettings = {
   apiKey?: string;
@@ -65,30 +65,19 @@ function createProviderSettings(config: ModelConfigItem): ProviderSettings {
 }
 
 /**
- * Config-derived body overrides: the reasoning effort param (if the provider
- * supports it and a non-default effort is configured) plus the user's own
- * extraBody. extraBody is spread last so a same-named key the user wrote by
- * hand always wins over the effort param this feature injects.
+ * Config-derived body overrides: the user's own extraBody, merged into every
+ * request body. Whatever is written there reaches the provider verbatim
+ * (e.g. `{"thinking": {"type": "disabled"}}` to turn a reasoning model's
+ * chain-of-thought off).
  */
 export function buildBodyOverrides(
-  config: Pick<ModelConfigItem, 'apiMode' | 'extraBody' | 'providerId' | 'reasoningEffort'>,
+  config: Pick<ModelConfigItem, 'extraBody'>,
 ): Record<string, unknown> {
-  const usesResponsesShape =
-    config.providerId === 'open-responses' ||
-    (config.providerId === 'openai' && config.apiMode === 'responses');
-
-  const effortBody: Record<string, unknown> =
-    config.reasoningEffort === '' || !supportsReasoningEffort(config.providerId)
-      ? {}
-      : usesResponsesShape
-        ? { reasoning: { effort: config.reasoningEffort } }
-        : { reasoning_effort: config.reasoningEffort };
-
-  return { ...effortBody, ...config.extraBody };
+  return { ...config.extraBody };
 }
 
 function createFetchWithExtraBody(
-  config: Pick<ModelConfigItem, 'apiMode' | 'extraBody' | 'providerId' | 'reasoningEffort'>,
+  config: Pick<ModelConfigItem, 'extraBody'>,
 ) {
   const overrides = buildBodyOverrides(config);
 

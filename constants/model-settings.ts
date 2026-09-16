@@ -255,54 +255,9 @@ export type ModelConfigItem = {
   outputTokenPrice: number;
   priceUnit: string;
   providerId: ModelProviderId;
-  /** Empty string means "default": don't send the param, let the provider decide. */
-  reasoningEffort: string;
-  /** Levels this model supports, sourced from the remote model list. Empty = unknown. */
-  reasoningEffortLevels: string[];
 };
 
 export type ModelDraft = Omit<ModelConfigItem, 'at' | 'id'>;
-
-/** Generic reasoning effort candidates used when a model's own levels are unknown. */
-export const REASONING_EFFORT_PRESETS = [
-  'none',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-] as const;
-
-/** Whether this provider accepts an OpenAI-style reasoning effort parameter. */
-export function supportsReasoningEffort(providerId: ModelProviderId): boolean {
-  return (
-    providerId === 'openai-compatible' ||
-    providerId === 'openai' ||
-    providerId === 'open-responses'
-  );
-}
-
-/**
- * Reasoning effort options to offer in a select: the model's own levels when
- * known, otherwise the generic presets. If the currently stored value isn't
- * in that list, it's appended so an already-saved value always shows up.
- * Never includes the empty string; the "default" option is added by the UI.
- */
-export function getReasoningEffortOptions(
-  model: Pick<ModelConfigItem, 'reasoningEffort' | 'reasoningEffortLevels'>,
-): string[] {
-  const options =
-    model.reasoningEffortLevels.length > 0
-      ? [...model.reasoningEffortLevels]
-      : [...REASONING_EFFORT_PRESETS];
-
-  if (model.reasoningEffort && !options.includes(model.reasoningEffort)) {
-    options.push(model.reasoningEffort);
-  }
-
-  return options;
-}
 
 export function getModelProviderDefinition(providerId: ModelProviderId) {
   return (
@@ -338,8 +293,6 @@ export function createDefaultModelDraft(
     outputTokenPrice: 0,
     priceUnit: '$',
     providerId,
-    reasoningEffort: '',
-    reasoningEffortLevels: [],
   };
 }
 

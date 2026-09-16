@@ -1,4 +1,8 @@
 # Changelog
+## [2.2.0]
+1. remove: 模型设置里的「思考等级（Reasoning Effort）」整套功能 —— popup 的快捷切换下拉、模型编辑页的下拉与「该模型支持的等级」提示、远程模型列表里的 `reasoning.effort_levels` / `default_effort_level` 解析、`setModelReasoningEffort` 写入口，以及模型行上的 `reasoningEffort` / `reasoningEffortLevels` 两个字段。请求体参数现在统一走 `Extra Body JSON` 一条路，不再有「下拉选的值」与「Extra Body 里手写的同名字段」两套来源互相覆盖。需要关掉推理模型的思考时直接写进 Extra Body，例如 DeepSeek V4/V4.1-Flash：`{"thinking": {"type": "disabled"}}`。旧版本写入的模型行若带这两个遗留键，读取时会被丢弃，其余字段不受影响
+2. test: 移除 reasoning effort 的 14 个用例，并补一条回归保护 —— 旧版本写入的行带着遗留 reasoning 键时仍能正常加载、且这些键不会出现在返回结果里（用例数 107 → 93）
+
 ## [2.1.0]
 1. fix: 点击引用 chip 跳转原文在不少页面静默失效 —— 原实现依赖 `window.find` + Scroll-to-Text Fragment，搜不到 Shadow DOM / 同源 iframe 内的文字，要求模型逐字引用（全半角标点、空白、引号、跨段换行任一不同即失败），且同文档 `:~:text=` 跳转不可靠、遇到 hash 路由直接放弃。改为自行遍历 DOM 文本节点（含 open shadow root 与同源 iframe，跳过扩展自身面板），NFKC 归一后只比对字母数字；整句不命中时退回最长命中片段（中文 ≥6 字 / 英文 ≥16 字母，且不短于原句 35%）；多处命中优先可见位置，必要时展开折叠的 `<details>`；`scrollIntoView` 支持内层滚动容器；用 CSS Custom Highlight API 高亮 4 秒，不改动页面选区（不会误触发划词总结入口）
 2. feat: 引用原文找不到时弹出提示，并把该 chip 置灰
