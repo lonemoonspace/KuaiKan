@@ -21,33 +21,10 @@ export type ModelMoveDirection = 'down' | 'up';
 export type RemoteModelInfo = {
   id: string;
   label: string;
-  reasoningEffortLevels?: string[];
-  defaultReasoningEffort?: string;
 };
 
 function cleanString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-const REASONING_EFFORT_PATTERN = /^[a-z]+$/;
-
-function normalizeReasoningEffort(value: unknown): string {
-  const cleaned = cleanString(value).toLowerCase();
-  return REASONING_EFFORT_PATTERN.test(cleaned) ? cleaned : '';
-}
-
-function normalizeReasoningEffortLevels(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-
-  const seen = new Set<string>();
-  for (const item of value) {
-    const cleaned = cleanString(item).toLowerCase();
-    if (REASONING_EFFORT_PATTERN.test(cleaned)) {
-      seen.add(cleaned);
-    }
-  }
-
-  return Array.from(seen);
 }
 
 function cleanHeaders(value: unknown): Record<string, string> {
@@ -131,8 +108,6 @@ function normalizeModel(value: ModelConfigItem): ModelConfigItem | null {
     outputTokenPrice: cleanNonNegativeNumber(value.outputTokenPrice),
     priceUnit: cleanString(value.priceUnit) || '$',
     providerId: value.providerId,
-    reasoningEffort: normalizeReasoningEffort(value.reasoningEffort),
-    reasoningEffortLevels: normalizeReasoningEffortLevels(value.reasoningEffortLevels),
   };
 }
 
@@ -198,8 +173,6 @@ function validateDraft(draft: ModelDraft): ModelDraft {
     outputTokenPrice: cleanNonNegativeNumber(draft.outputTokenPrice),
     priceUnit: cleanString(draft.priceUnit) || '$',
     providerId: draft.providerId,
-    reasoningEffort: normalizeReasoningEffort(draft.reasoningEffort),
-    reasoningEffortLevels: normalizeReasoningEffortLevels(draft.reasoningEffortLevels),
   };
 }
 
@@ -392,25 +365,6 @@ export async function setDefaultModelConfig(id: string) {
   return true;
 }
 
-/** Quick popup-side switch: update just the reasoning effort of one model. */
-export async function setModelReasoningEffort(id: string, effort: string) {
-  const settings = await loadModelSettings();
-  const index = settings.models.findIndex((model) => model.id === id);
-
-  if (index === -1) {
-    return false;
-  }
-
-  settings.models[index] = {
-    ...settings.models[index],
-    reasoningEffort: normalizeReasoningEffort(effort),
-  };
-
-  await writeModelSettings(settings);
-
-  return true;
-}
-
 export function createEmptyModelDraft() {
   return createDefaultModelDraft('openai-compatible');
 }
@@ -460,24 +414,6 @@ function extractErrorMessage(payload: unknown) {
   return '';
 }
 
-function extractReasoningEffortLevels(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-
-  const levels: string[] = [];
-  for (const entry of value) {
-    const raw =
-      typeof entry === 'string'
-        ? entry
-        : entry && typeof entry === 'object'
-          ? (entry as Record<string, unknown>).value
-          : undefined;
-    const cleaned = normalizeReasoningEffort(raw);
-    if (cleaned) levels.push(cleaned);
-  }
-
-  return levels.length > 0 ? levels : undefined;
-}
-
 export function extractRemoteModels(payload: unknown): RemoteModelInfo[] {
   if (!payload || typeof payload !== 'object') {
     return [];
@@ -509,29 +445,10 @@ export function extractRemoteModels(payload: unknown): RemoteModelInfo[] {
         return null;
       }
 
-      const result: RemoteModelInfo = {
+      return {
         id,
         label: cleanString(model.name) || id,
       };
-
-      const reasoning =
-        model.reasoning && typeof model.reasoning === 'object'
-          ? (model.reasoning as Record<string, unknown>)
-          : null;
-
-      if (reasoning) {
-        const levels = extractReasoningEffortLevels(reasoning.effort_levels);
-        if (levels) {
-          result.reasoningEffortLevels = levels;
-        }
-
-        const defaultEffort = normalizeReasoningEffort(reasoning.default_effort_level);
-        if (defaultEffort) {
-          result.defaultReasoningEffort = defaultEffort;
-        }
-      }
-
-      return result;
     })
     .filter((model): model is RemoteModelInfo => model !== null);
 }

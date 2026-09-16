@@ -3,10 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // lib/model-settings-storage.ts reads/writes through `storage` from '#imports'
 // (aliased in vitest.config.ts to test/mocks/imports.ts, whose getItems/setItems
 // are no-op stubs). To exercise normalization of data actually coming out of
-// storage (old rows missing the new reasoning-effort fields, invalid stored
-// values, etc.) this file replaces that stub with a tiny in-memory store,
-// following the pattern already used for the wxt/browser mock in
-// test/lib/migration.test.ts.
+// storage (rows written by older versions, invalid stored values, etc.) this
+// file replaces that stub with a tiny in-memory store, following the pattern
+// already used for the wxt/browser mock in test/lib/migration.test.ts.
 const { mockStore } = vi.hoisted(() => ({ mockStore: new Map<string, unknown>() }));
 
 vi.mock('#imports', () => ({
@@ -31,7 +30,6 @@ import {
 import {
   extractRemoteModels,
   loadModelSettings,
-  setModelReasoningEffort,
 } from '@/lib/model-settings-storage';
 
 const LEGACY_BASE = {
@@ -51,86 +49,69 @@ const LEGACY_BASE = {
   at: 1,
 };
 
-describe('normalizeModel via loadModelSettings (reasoning effort fields)', () => {
+describe('normalizeModel via loadModelSettings', () => {
   beforeEach(() => {
     mockStore.clear();
   });
 
-  it('gives old rows missing reasoningEffort/reasoningEffortLevels the empty defaults, without dropping the row', async () => {
+  it('keeps a row written by an older version without dropping it', async () => {
     mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [{ ...LEGACY_BASE }]);
 
     const settings = await loadModelSettings();
 
     expect(settings.models).toHaveLength(1);
-    expect(settings.models[0].reasoningEffort).toBe('');
-    expect(settings.models[0].reasoningEffortLevels).toEqual([]);
+    expect(settings.models[0].id).toBe('m1');
+    expect(settings.models[0].baseURL).toBe('https://api.example.com/v1');
+    expect(settings.defaultModelId).toBe('m1');
   });
 
-  it('clears a reasoningEffort value that is not a plain lowercase-able word', async () => {
+  it('drops leftover keys the current shape no longer defines', async () => {
+    // 2.1.0 and earlier stored a reasoning-effort pair on every row. Those keys
+    // are gone now; a row carrying them must still load and come back clean.
     mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [
-      { ...LEGACY_BASE, reasoningEffort: 'HIGH!!' },
+      { ...LEGACY_BASE, reasoningEffort: 'HIGH', reasoningEffortLevels: ['low', 'high'] },
     ]);
 
     const settings = await loadModelSettings();
 
-    expect(settings.models[0].reasoningEffort).toBe('');
+    expect(settings.models).toHaveLength(1);
+    expect(settings.models[0]).not.toHaveProperty('reasoningEffort');
+    expect(settings.models[0]).not.toHaveProperty('reasoningEffortLevels');
   });
 
-  it('lowercases a valid reasoningEffort value', async () => {
-    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [{ ...LEGACY_BASE, reasoningEffort: 'HIGH' }]);
-
-    const settings = await loadModelSettings();
-
-    expect(settings.models[0].reasoningEffort).toBe('high');
-  });
-
-  it('filters out invalid entries and de-duplicates reasoningEffortLevels', async () => {
-    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [
-      { ...LEGACY_BASE, reasoningEffortLevels: ['Low', 'bad one!', 'HIGH', 'low'] },
-    ]);
-
-    const settings = await loadModelSettings();
-
-    expect(settings.models[0].reasoningEffortLevels).toEqual(['low', 'high']);
-  });
-
-  it('treats a non-array reasoningEffortLevels as unknown (empty array)', async () => {
-    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [
-      { ...LEGACY_BASE, reasoningEffortLevels: 'high' },
-    ]);
-
-    const settings = await loadModelSettings();
-
-    expect(settings.models[0].reasoningEffortLevels).toEqual([]);
-  });
-});
-
-describe('setModelReasoningEffort', () => {
-  beforeEach(() => {
-    mockStore.clear();
-  });
-
-  it('updates and normalizes the reasoning effort of an existing model', async () => {
+  it('falls back to the first row when the stored default id points nowhere', async () => {
     mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [{ ...LEGACY_BASE }]);
-    mockStore.set(DEFAULT_MODEL_ID_V2_STORAGE_KEY, 'm1');
-
-    const ok = await setModelReasoningEffort('m1', 'HIGH');
-    expect(ok).toBe(true);
+    mockStore.set(DEFAULT_MODEL_ID_V2_STORAGE_KEY, 'missing-id');
 
     const settings = await loadModelSettings();
-    expect(settings.models[0].reasoningEffort).toBe('high');
-  });
 
-  it('returns false for an unknown model id', async () => {
-    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [{ ...LEGACY_BASE }]);
-
-    const ok = await setModelReasoningEffort('does-not-exist', 'high');
-    expect(ok).toBe(false);
+    expect(settings.defaultModelId).toBe('m1');
   });
 });
 
 describe('extractRemoteModels', () => {
-  it('parses the Hyper shape: effort_levels as {value} objects plus default_effort_level', () => {
+  it('reads the OpenAI-style data list', () => {
+    const payload = {
+      data: [
+        { id: 'deepseek-chat', name: 'DeepSeek Chat' },
+        { id: 'deepseek-reasoner' },
+      ],
+    };
+
+    expect(extractRemoteModels(payload)).toEqual([
+      { id: 'deepseek-chat', label: 'DeepSeek Chat' },
+      { id: 'deepseek-reasoner', label: 'deepseek-reasoner' },
+    ]);
+  });
+
+  it('accepts a bare list of model ids', () => {
+    expect(extractRemoteModels({ models: ['gpt-4o', 'gpt-4o-mini'] })).toEqual([
+      { id: 'gpt-4o', label: 'gpt-4o' },
+      { id: 'gpt-4o-mini', label: 'gpt-4o-mini' },
+    ]);
+  });
+
+  it('ignores reasoning metadata a provider may still return', () => {
     const payload = {
       data: [
         {
@@ -143,36 +124,13 @@ describe('extractRemoteModels', () => {
       ],
     };
 
-    const models = extractRemoteModels(payload);
-
-    expect(models).toEqual([
-      {
-        id: 'kimi-k3',
-        label: 'kimi-k3',
-        reasoningEffortLevels: ['low', 'high'],
-        defaultReasoningEffort: 'high',
-      },
+    expect(extractRemoteModels(payload)).toEqual([
+      { id: 'kimi-k3', label: 'kimi-k3' },
     ]);
   });
 
-  it('also accepts effort_levels as plain strings', () => {
-    const payload = {
-      data: [{ id: 'gpt-oss-120b', reasoning: { effort_levels: ['none', 'low', 'max'] } }],
-    };
-
-    const models = extractRemoteModels(payload);
-
-    expect(models[0].reasoningEffortLevels).toEqual(['none', 'low', 'max']);
-    expect(models[0].defaultReasoningEffort).toBeUndefined();
-  });
-
-  it('leaves reasoning fields unset for a plain model with no reasoning info', () => {
-    const payload = { data: [{ id: 'deepseek-chat' }] };
-
-    const models = extractRemoteModels(payload);
-
-    expect(models).toEqual([{ id: 'deepseek-chat', label: 'deepseek-chat' }]);
-    expect(models[0].reasoningEffortLevels).toBeUndefined();
-    expect(models[0].defaultReasoningEffort).toBeUndefined();
+  it('returns nothing for a payload with no usable list', () => {
+    expect(extractRemoteModels(null)).toEqual([]);
+    expect(extractRemoteModels({ error: 'nope' })).toEqual([]);
   });
 });

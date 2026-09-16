@@ -2,9 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   getModelOptionLabel,
   getModelVendorLabel,
-  getReasoningEffortOptions,
-  supportsReasoningEffort,
-  REASONING_EFFORT_PRESETS,
 } from '@/constants/model-settings';
 
 describe('getModelVendorLabel', () => {
@@ -38,45 +35,5 @@ describe('getModelOptionLabel', () => {
     expect(getModelOptionLabel({ name: 'gpt-5', modelId: 'gpt-5' })).toBe('gpt-5');
     expect(getModelOptionLabel({ name: '', modelId: 'gpt-5' })).toBe('gpt-5');
     expect(getModelOptionLabel({ name: '我的模型', modelId: '' })).toBe('我的模型');
-  });
-});
-
-describe('supportsReasoningEffort', () => {
-  it('is true only for the OpenAI-shaped providers', () => {
-    expect(supportsReasoningEffort('openai-compatible')).toBe(true);
-    expect(supportsReasoningEffort('openai')).toBe(true);
-    expect(supportsReasoningEffort('open-responses')).toBe(true);
-  });
-
-  it('is false for anthropic, google and ollama', () => {
-    expect(supportsReasoningEffort('anthropic')).toBe(false);
-    expect(supportsReasoningEffort('google')).toBe(false);
-    expect(supportsReasoningEffort('ollama')).toBe(false);
-  });
-});
-
-describe('getReasoningEffortOptions', () => {
-  it('uses the model-specific levels when known', () => {
-    expect(
-      getReasoningEffortOptions({ reasoningEffort: '', reasoningEffortLevels: ['low', 'high'] }),
-    ).toEqual(['low', 'high']);
-  });
-
-  it('falls back to the generic presets when levels are unknown', () => {
-    expect(getReasoningEffortOptions({ reasoningEffort: '', reasoningEffortLevels: [] })).toEqual([
-      ...REASONING_EFFORT_PRESETS,
-    ]);
-  });
-
-  it('appends an already-stored value that is not in the known/preset list, so it still displays', () => {
-    expect(
-      getReasoningEffortOptions({ reasoningEffort: 'ultra', reasoningEffortLevels: ['low', 'high'] }),
-    ).toEqual(['low', 'high', 'ultra']);
-  });
-
-  it('does not duplicate a stored value that is already in the list', () => {
-    expect(
-      getReasoningEffortOptions({ reasoningEffort: 'high', reasoningEffortLevels: ['low', 'high'] }),
-    ).toEqual(['low', 'high']);
   });
 });
