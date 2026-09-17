@@ -448,24 +448,6 @@ export function GeneralPage() {
           label="日志级别"
           storageKey={GENERAL_SETTING_DEFINITIONS.logLevel.storageKey}
         />
-        <Row
-          control={
-            <button
-              className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              onClick={() => {
-                void import('wxt/browser').then(({ browser }) => {
-                  browser.tabs.create({ url: 'chrome://extensions/shortcuts' });
-                });
-              }}
-              type="button"
-            >
-              <ExternalLink className="size-3.5" />
-              去设置
-            </button>
-          }
-          description="在浏览器里配置打开面板的快捷键。"
-          label="快捷键"
-        />
       </Group>
 
       <div className="mt-6">

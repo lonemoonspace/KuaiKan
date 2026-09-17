@@ -105,7 +105,7 @@ export async function addContextMenus() {
   }
 }
 
-// Set up event listeners for context menu and commands click
+// Set up event listeners for context menu clicks
 export function initializeControlHandlers() {
   browser.contextMenus.onClicked.addListener(async (info, tab) => {
     logger.debug('[contextMenu] onClicked, menuItemId:', info.menuItemId);
@@ -117,12 +117,5 @@ export function initializeControlHandlers() {
       browser.tabs.create({ url: '/options.html#/' });
     }
 
-  });
-
-  browser.commands.onCommand.addListener((command, tab) => {
-    logger.debug('[command] received command:', command);
-    if (command === 'COMMAND_INVOKE_SUMMARY' && tab) {
-      activePageAndInvokeSummary(tab);
-    }
   });
 }

@@ -18,15 +18,6 @@ export default defineConfig({
     description: '(开源) KuaiKan 快看插件, 快捷AI总结页面, 支持定制提示词/接入任意大模型API, 轻量无服务纯插件, 隐私无忧',
     host_permissions: ['<all_urls>'],
     permissions: ['activeTab', 'storage', 'contextMenus', 'scripting', 'declarativeNetRequest'],
-    commands: {
-      COMMAND_INVOKE_SUMMARY: {
-        suggested_key: {
-          default: 'Alt+S',
-          mac: 'Command+Shift+S',
-        },
-        description: '打开面板',
-      },
-    },
     web_accessible_resources: [
       {
         resources: ['icon/*', 'llm-icons/*', '*.svg', '*.png'],

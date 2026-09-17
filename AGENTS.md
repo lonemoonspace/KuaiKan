@@ -73,7 +73,7 @@
 | 入口 | 说明 |
 |---|---|
 | `entrypoints/content/` | 注入网页的 content script，Shadow DOM 挂载总结面板和悬浮球 |
-| `entrypoints/background/` | 后台脚本，处理快捷键、右键菜单、LLM 流式调用、首次 prompt 播种 |
+| `entrypoints/background/` | 后台脚本，处理右键菜单、LLM 流式调用、首次 prompt 播种 |
 | `entrypoints/popup/` | 扩展图标弹窗 |
 | `entrypoints/options/` | 设置页，管理模型、Prompt 与通用设置 |
 
