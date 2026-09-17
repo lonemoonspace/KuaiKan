@@ -97,6 +97,18 @@ export function mergeModelSecrets(currentValue: unknown, incomingValue: unknown)
       merged.headers = local.headers;
     }
 
+    // Same reasoning as apiKey/headers, for the fetched model pool: it is
+    // per-endpoint local knowledge produced by a `/models` fetch, so an export
+    // from a build that predates the field carries nothing and overwriting the
+    // local pool with that emptiness would silently lose it.
+    if (
+      (!Array.isArray(merged.modelIds) || merged.modelIds.length === 0) &&
+      Array.isArray(local.modelIds) &&
+      local.modelIds.length > 0
+    ) {
+      merged.modelIds = local.modelIds;
+    }
+
     return merged;
   });
 }

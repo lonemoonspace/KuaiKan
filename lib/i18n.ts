@@ -267,7 +267,7 @@ const UI_MESSAGES = {
     welcome: '欢迎',
   },
   popup: {
-    provider: '供应商',
+    provider: '配置',
     noActiveTab: '没有可用的当前标签页',
     pageSupported: '当前页面可以开始总结',
     pageUnsupported: '当前页面暂不支持内容提取',

@@ -21,7 +21,7 @@ import {
 import { TokenViewerModal } from '@/components/TokenViewerModal';
 import { useContentApp } from './useContentApp';
 import { UsageDisplay } from './UsageDisplay';
-import { ModelPromptSelector } from './ModelPromptSelector';
+import { ModelSelector } from './ModelSelector';
 import { getUiMessages } from '@/lib/i18n';
 import {
   GENERAL_SETTING_DEFINITIONS,
@@ -98,16 +98,14 @@ export function ContentAppFrame({ onClose, beginSummaryRequest = 0 }: ContentApp
     error,
     errorMessage,
     models,
-    prompts,
     currentModelId,
     setCurrentModelId,
-    currentPromptId,
-    setCurrentPromptId,
     currentModel,
     pageContent,
     pageContentTokenCount,
     handleSummarize,
     beginSummary,
+    handleModelIdChange,
   } = useContentApp();
 
   const isBusy = status === 'streaming' || status === 'submitted';
@@ -179,13 +177,11 @@ export function ContentAppFrame({ onClose, beginSummaryRequest = 0 }: ContentApp
           )}
         </div>
 
-        <ModelPromptSelector
+        <ModelSelector
           models={models}
-          prompts={prompts}
           currentModelId={currentModelId}
-          currentPromptId={currentPromptId}
           onModelChange={setCurrentModelId}
-          onPromptChange={setCurrentPromptId}
+          onModelIdChange={handleModelIdChange}
         />
 
         <div className="flex items-center gap-0.5 text-zinc-500 dark:text-zinc-300 justify-end shrink-0 h-full">

@@ -31,10 +31,13 @@ vi.mock('#imports', () => ({
 import {
   MODEL_CONFIGS_V2_STORAGE_KEY,
   DEFAULT_MODEL_ID_V2_STORAGE_KEY,
+  createDefaultModelDraft,
 } from '@/constants/model-settings';
 import {
   extractRemoteModels,
   loadModelSettings,
+  setModelConfigModelId,
+  updateModelConfig,
 } from '@/lib/model-settings-storage';
 
 const LEGACY_BASE = {
@@ -137,5 +140,116 @@ describe('extractRemoteModels', () => {
   it('returns nothing for a payload with no usable list', () => {
     expect(extractRemoteModels(null)).toEqual([]);
     expect(extractRemoteModels({ error: 'nope' })).toEqual([]);
+  });
+});
+
+describe('model pool normalization', () => {
+  beforeEach(() => {
+    mockStore.clear();
+  });
+
+  it('defaults a row written before the pool existed to an empty list', async () => {
+    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [{ ...LEGACY_BASE }]);
+
+    const settings = await loadModelSettings();
+
+    expect(settings.models[0].modelIds).toEqual([]);
+  });
+
+  it('keeps a fetched pool, dropping blanks and duplicates', async () => {
+    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [
+      {
+        ...LEGACY_BASE,
+        modelIds: ['deepseek-chat', '', '  ', 'deepseek-chat', 'deepseek-reasoner'],
+      },
+    ]);
+
+    const settings = await loadModelSettings();
+
+    expect(settings.models[0].modelIds).toEqual([
+      'deepseek-chat',
+      'deepseek-reasoner',
+    ]);
+  });
+
+  it('ignores a stored pool that is not an array', async () => {
+    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [
+      { ...LEGACY_BASE, modelIds: 'deepseek-chat' },
+    ]);
+
+    const settings = await loadModelSettings();
+
+    expect(settings.models[0].modelIds).toEqual([]);
+  });
+
+  it('keeps the pool when the config is saved through updateModelConfig', async () => {
+    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [{ ...LEGACY_BASE }]);
+
+    await updateModelConfig('m1', {
+      ...createDefaultModelDraft('openai-compatible'),
+      baseURL: 'https://api.example.com/v1',
+      modelId: 'gpt-4o-mini',
+      modelIds: ['gpt-4o', 'gpt-4o-mini'],
+      name: 'Renamed',
+    });
+
+    const settings = await loadModelSettings();
+
+    expect(settings.models[0].modelIds).toEqual(['gpt-4o', 'gpt-4o-mini']);
+    expect(settings.models[0].modelId).toBe('gpt-4o-mini');
+    expect(settings.models[0].name).toBe('Renamed');
+  });
+});
+
+describe('setModelConfigModelId', () => {
+  beforeEach(() => {
+    mockStore.clear();
+  });
+
+  it('switches the model while leaving the pool and the default config alone', async () => {
+    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [
+      { ...LEGACY_BASE, modelIds: ['gpt-4o', 'gpt-4o-mini'] },
+      {
+        ...LEGACY_BASE,
+        id: 'm2',
+        modelId: 'claude-3-5-sonnet-latest',
+        name: 'Second',
+      },
+    ]);
+    mockStore.set(DEFAULT_MODEL_ID_V2_STORAGE_KEY, 'm2');
+
+    expect(await setModelConfigModelId('m1', 'gpt-4o-mini')).toBe(true);
+
+    const settings = await loadModelSettings();
+
+    expect(settings.models[0].modelId).toBe('gpt-4o-mini');
+    expect(settings.models[0].modelIds).toEqual(['gpt-4o', 'gpt-4o-mini']);
+    expect(settings.defaultModelId).toBe('m2');
+  });
+
+  it('accepts an id outside the pool without rewriting the pool', async () => {
+    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [
+      { ...LEGACY_BASE, modelIds: ['gpt-4o'] },
+    ]);
+
+    expect(await setModelConfigModelId('m1', 'hand-typed-model')).toBe(true);
+
+    const settings = await loadModelSettings();
+
+    expect(settings.models[0].modelId).toBe('hand-typed-model');
+    expect(settings.models[0].modelIds).toEqual(['gpt-4o']);
+  });
+
+  it('refuses an unknown config and an empty model id', async () => {
+    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [
+      { ...LEGACY_BASE, modelIds: ['gpt-4o'] },
+    ]);
+
+    expect(await setModelConfigModelId('nope', 'gpt-4o')).toBe(false);
+    expect(await setModelConfigModelId('m1', '   ')).toBe(false);
+
+    const settings = await loadModelSettings();
+
+    expect(settings.models[0].modelId).toBe('gpt-4o');
   });
 });

@@ -2,9 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Mustache from 'mustache';
 import { toast } from 'sonner';
 import { useChat } from '@ai-sdk/react';
+import { storage } from '#imports';
 
 import { AiSdkConnectTransport } from '@/lib/ai-sdk-connect-transport';
-import { loadModelSettings } from '@/lib/model-settings-storage';
+import {
+  loadModelSettings,
+  setModelConfigModelId,
+} from '@/lib/model-settings-storage';
 import { loadPromptSettings } from '@/lib/prompt-settings-storage';
 import { loadGeneralSettings } from '@/lib/general-settings-storage';
 import { extractWebpageContent, type WebpageContent } from '@/lib/page-extraction';
@@ -22,7 +26,10 @@ import {
   type SummaryErrorCode,
 } from '@/lib/error-taxonomy';
 
-import type { ModelConfigItem } from '@/constants/model-settings';
+import {
+  MODEL_CONFIGS_V2_STORAGE_KEY,
+  type ModelConfigItem,
+} from '@/constants/model-settings';
 import type { PromptConfigItem } from '@/constants/prompt-settings';
 import type { GeneralSettings } from '@/constants/general-settings';
 import { getUiMessages } from '@/lib/i18n';
@@ -273,12 +280,60 @@ export function useContentApp() {
     };
   }, []);
 
+  // Model-config edits made elsewhere (options page, popup) have to reach a
+  // panel that is already open: both the fetched model pool and the selected
+  // id live on the config row, so a stale copy would offer the wrong options.
+  // This deliberately does not touch `currentModelId` — which config the panel
+  // is showing stays the user's session-local choice.
+  useEffect(() => {
+    let active = true;
+
+    const unwatch = storage.watch(MODEL_CONFIGS_V2_STORAGE_KEY, () => {
+      void loadModelSettings()
+        .then((settings) => {
+          if (active) setModels(settings.models);
+        })
+        .catch((e) =>
+          logger.error('[useContentApp] Failed to refresh model configs', e),
+        );
+    });
+
+    return () => {
+      active = false;
+      unwatch();
+    };
+  }, []);
+
   // External triggers are routed through the extension message listener in
   // ContentEntrance rather than a page-visible DOM event. useCallback keeps
   // the reference stable so ContentAppFrame's trigger effect fires once per
   // request instead of on every render (which caused an abort/restart loop).
   const beginSummary = useCallback(() => {
     setAutoSummarizePending(true);
+  }, []);
+
+  // Picking another model out of the current config's pool writes through to
+  // that config row, so the choice survives a reload and shows up in the
+  // options page and the popup. `currentModelId` here is the config's id.
+  const handleModelIdChange = useCallback(async (modelId: string) => {
+    const configId = summarizeContextRef.current.currentModelId;
+
+    if (!configId || !modelId) return;
+
+    try {
+      const changed = await setModelConfigModelId(configId, modelId);
+
+      if (!changed) return;
+
+      // Reload rather than waiting for the storage watcher: whether an
+      // onChanged event fires back into the context that wrote is an
+      // implementation detail, and the picker must never snap back to the
+      // previous id. A failed write leaves the UI on the old value.
+      const settings = await loadModelSettings();
+      setModels(settings.models);
+    } catch (e) {
+      logger.error('[useContentApp] Failed to switch the model id', e);
+    }
   }, []);
 
   const handleSummarize = useCallback(async () => {
@@ -463,5 +518,6 @@ export function useContentApp() {
     // handlers
     handleSummarize,
     beginSummary,
+    handleModelIdChange,
   };
 }

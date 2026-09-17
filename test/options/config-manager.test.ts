@@ -59,4 +59,48 @@ describe('mergeModelSecrets', () => {
     const merged = mergeModelSecrets(local, incoming) as any[];
     expect(merged[0].apiKey).toBe('imported-secret');
   });
+
+  it('carries the local model pool over an import that predates the field', () => {
+    const localWithPool = [
+      {
+        ...local[0],
+        modelId: 'deepseek-chat',
+        modelIds: ['deepseek-chat', 'deepseek-reasoner'],
+      },
+    ];
+    const incoming = [
+      {
+        id: 'm1',
+        providerId: 'openai-compatible',
+        baseURL: 'https://api.deepseek.com/v1',
+        apiKey: '',
+        headers: {},
+        modelId: 'deepseek-chat',
+      },
+    ];
+
+    const merged = mergeModelSecrets(localWithPool, incoming) as any[];
+
+    expect(merged[0].modelIds).toEqual(['deepseek-chat', 'deepseek-reasoner']);
+  });
+
+  it('keeps the imported model pool when the import carries one', () => {
+    const localWithPool = [
+      { ...local[0], modelIds: ['deepseek-chat'] },
+    ];
+    const incoming = [
+      {
+        id: 'm1',
+        providerId: 'openai-compatible',
+        baseURL: 'https://api.deepseek.com/v1',
+        apiKey: '',
+        headers: {},
+        modelIds: ['gpt-4o', 'gpt-4o-mini'],
+      },
+    ];
+
+    const merged = mergeModelSecrets(localWithPool, incoming) as any[];
+
+    expect(merged[0].modelIds).toEqual(['gpt-4o', 'gpt-4o-mini']);
+  });
 });
