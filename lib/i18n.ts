@@ -50,17 +50,6 @@ const UI_MESSAGES = {
     restoreDefaults: '恢复默认值',
     saveFailed: '通用设置保存失败。',
     savedToast: '通用设置已保存。',
-    sections: {
-      contextMenu: {
-        description: '选择扩展在页面菜单中提供哪些入口。',
-        title: '右键菜单',
-      },
-
-      triggers: {
-        description: '控制面板的默认行为以及何时自动开始工作。',
-        title: '触发',
-      },
-    },
     settings: {
       enableAutoBeginSummary: {
         description: '',

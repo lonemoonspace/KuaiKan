@@ -215,7 +215,7 @@ export function PromptsListPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
                 className={cn(
-                  "grid gap-4 rounded-md border p-4 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] transition-colors",
+                  "grid gap-2 rounded-md border p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] transition-colors",
                   isDefault ? "border-primary/30 bg-primary/5" : "bg-card"
                 )}
                 key={prompt.id}
@@ -247,20 +247,25 @@ export function PromptsListPage() {
                     ) : null}
                   </label>
 
-                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                    <div className="grid min-w-0 gap-1">
-                      <span className="text-xs font-medium uppercase text-muted-foreground">
-                        {messages.prompts.systemMessage}
-                      </span>
-                      <PromptMessagePreview message={prompt.systemMessage} />
+                  <details className="mt-1.5">
+                    <summary className="cursor-pointer select-none text-xs text-muted-foreground transition-colors hover:text-foreground">
+                      查看提示词内容
+                    </summary>
+                    <div className="mt-2 grid gap-3 lg:grid-cols-2">
+                      <div className="grid min-w-0 gap-1">
+                        <span className="text-xs font-medium uppercase text-muted-foreground">
+                          {messages.prompts.systemMessage}
+                        </span>
+                        <PromptMessagePreview message={prompt.systemMessage} />
+                      </div>
+                      <div className="grid min-w-0 gap-1">
+                        <span className="text-xs font-medium uppercase text-muted-foreground">
+                          {messages.prompts.userMessage}
+                        </span>
+                        <PromptMessagePreview message={prompt.userMessage} />
+                      </div>
                     </div>
-                    <div className="grid min-w-0 gap-1">
-                      <span className="text-xs font-medium uppercase text-muted-foreground">
-                        {messages.prompts.userMessage}
-                      </span>
-                      <PromptMessagePreview message={prompt.userMessage} />
-                    </div>
-                  </div>
+                  </details>
                 </div>
 
                 <div className="flex items-start gap-2 sm:justify-end">

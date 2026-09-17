@@ -29,11 +29,9 @@ export function OptionsLayout() {
   const navigate = useNavigate();
   const manifest = browser.runtime.getManifest();
   const messages = getUiMessages();
-  const workspaceLinks: SidebarLink[] = [
+  const navLinks: SidebarLink[] = [
     { label: messages.options.navigation.models, to: '/models', icon: Bot },
     { label: messages.options.navigation.prompts, to: '/prompts', icon: MessageSquareText },
-  ];
-  const preferenceLinks: SidebarLink[] = [
     { label: messages.options.navigation.general, to: '/general', icon: Settings2 },
   ];
 
@@ -57,11 +55,14 @@ export function OptionsLayout() {
       </header>
 
       <div className="flex min-h-0 flex-1 max-md:flex-col">
-        <nav aria-label={messages.options.navigationLabel} className="w-60 shrink-0 border-r border-border/70 bg-card/30 px-3 py-5 max-md:w-full max-md:border-b max-md:border-r-0 max-md:px-4">
-          <NavGroup title="WORKSPACE" links={workspaceLinks} />
-          <NavGroup title="PREFERENCES" links={preferenceLinks} />
+        <nav aria-label={messages.options.navigationLabel} className="w-56 shrink-0 border-r border-border/70 bg-card/30 px-3 py-4 max-md:w-full max-md:border-b max-md:border-r-0 max-md:px-4">
+          <div className="grid gap-1">
+            {navLinks.map((link) => (
+              <OptionsSidebarLink key={link.to} {...link} />
+            ))}
+          </div>
         </nav>
-        <main className="relative min-w-0 flex-1 px-8 py-7 max-md:px-4 max-md:py-5">
+        <main className="relative min-w-0 flex-1 px-8 py-6 max-md:px-4 max-md:py-5">
           <div className="mx-auto w-full max-w-5xl">
             {isDetailRoute(location.pathname) ? <Button aria-label={messages.common.back} className="mb-3 size-8 rounded-lg p-0 [&_svg]:size-4" onClick={() => navigate(-1)} size="icon" type="button" variant="ghost"><ArrowLeft /></Button> : null}
             <Outlet />
@@ -70,8 +71,4 @@ export function OptionsLayout() {
       </div>
     </div>
   );
-}
-
-function NavGroup({ title, links }: { title: string; links: SidebarLink[] }) {
-  return <section className="mb-6 last:mb-0"><h2 className="mb-2 px-3 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground/70">{title}</h2><div className="grid gap-1">{links.map((link) => <OptionsSidebarLink key={link.to} {...link} />)}</div></section>;
 }
