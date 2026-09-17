@@ -252,6 +252,15 @@ async function writeModelSettings(settings: ModelSettings) {
   return { defaultModelId, models };
 }
 
+/**
+ * Replace the whole model list, e.g. when importing an exported file. Rows go
+ * through the same normalization as every other write, so a hand-edited or
+ * partially-shaped file cannot put data into storage the loader would drop.
+ */
+export async function replaceModelSettings(settings: ModelSettings) {
+  return writeModelSettings(settings);
+}
+
 export async function loadModelSettings(): Promise<ModelSettings> {
   const [modelsItem, defaultModelItem] = await storage.getItems([
     {

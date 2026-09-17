@@ -1,8 +1,6 @@
 import { createHashRouter, Navigate, RouterProvider } from 'react-router';
 import { OptionsLayout } from './layout/OptionsLayout';
-import { ConfigManagerPage } from './pages/ConfigManagerPage';
 import { GeneralPage } from './pages/GeneralPage';
-import { InterfacePage } from './pages/InterfacePage';
 import { CreateModelPage } from './pages/models/CreateModelPage';
 import { EditModelPage } from './pages/models/EditModelPage';
 import { ModelsListPage } from './pages/models/ModelsListPage';
@@ -11,7 +9,6 @@ import { CreatePromptPage } from './pages/prompts/CreatePromptPage';
 import { EditPromptPage } from './pages/prompts/EditPromptPage';
 import { PromptsListPage } from './pages/prompts/PromptsListPage';
 import { PromptsPage } from './pages/prompts/PromptsPage';
-import { SiteCustomizationPage } from './pages/SiteCustomizationPage';
 import { WelcomePage } from './pages/WelcomePage';
 
 const optionsRouter = createHashRouter([
@@ -21,11 +18,7 @@ const optionsRouter = createHashRouter([
     children: [
       {
         index: true,
-        element: <Navigate to="/interface" replace />,
-      },
-      {
-        path: 'interface',
-        Component: InterfacePage,
+        element: <Navigate to="/general" replace />,
       },
       {
         path: 'general',
@@ -68,24 +61,8 @@ const optionsRouter = createHashRouter([
         ],
       },
       {
-        path: 'site-customization',
-        Component: SiteCustomizationPage,
-      },
-      {
-        path: 'config_manager',
-        Component: ConfigManagerPage,
-      },
-      {
         path: 'welcome',
         Component: WelcomePage,
-      },
-      {
-        path: 'p1',
-        element: <Navigate to="/interface" replace />,
-      },
-      {
-        path: 'p2',
-        element: <Navigate to="/interface" replace />,
       },
     ],
   },

@@ -75,7 +75,7 @@
 | `entrypoints/content/` | 注入网页的 content script，Shadow DOM 挂载总结面板和悬浮球 |
 | `entrypoints/background/` | 后台脚本，处理快捷键、右键菜单、LLM 流式调用、首次 prompt 播种 |
 | `entrypoints/popup/` | 扩展图标弹窗 |
-| `entrypoints/options/` | 设置页，管理模型、Prompt、通用开关、站点规则、导入导出 |
+| `entrypoints/options/` | 设置页，管理模型、Prompt 与通用设置 |
 
 ---
 
@@ -108,7 +108,7 @@ ServerFrame:  { type: 'chunk'; chunk: UIMessageChunk } | { type: 'error'; messag
 
 ## 存储键 (Storage Keys)
 
-统一 `local:` 前缀，存放在 `browser.storage.local`。键常量定义在 `constants/general-settings.ts`、`constants/model-settings.ts`、`constants/prompt-settings.ts`、`constants/site-rules.ts`（不存在的 `src/constants/storage-key.ts` 仅见于旧文档）；业务代码不要写裸字面量键。
+统一 `local:` 前缀，存放在 `browser.storage.local`。键常量定义在 `constants/general-settings.ts`、`constants/model-settings.ts`、`constants/prompt-settings.ts`（不存在的 `src/constants/storage-key.ts` 仅见于旧文档）；业务代码不要写裸字面量键。
 
 | Key | 类型 | 说明 |
 |---|---|---|
@@ -117,9 +117,6 @@ ServerFrame:  { type: 'chunk'; chunk: UIMessageChunk } | { type: 'error'; messag
 | `local:default-model-id` | `string` | 当前默认模型配置 ID |
 | `local:default-prompt-id` | `string` | 当前默认 Prompt ID |
 | `local:prompt-library-seeded` | `boolean` | Prompt 库是否已播种 |
-| `local:site-customization-list` | `SiteCustomizationItem[]` | 站点自定义提取规则 |
-| `local:site-filter-whitelist` / `local:site-filter-blacklist` | `WhiteList` / `BlackList` | 站点启用/禁用规则 |
-| `local:summary-lang` | `string` | 总结目标语言（`zh-CN`, `en` 等） |
 | `local:summary-input-exceed-behaviour` | `front/middle/back/nothing` | 超长内容裁剪策略 |
 | `local:page-text-extract-method` | `readability/dom-heuristic` | 正文提取方式 |
 | `local:log-level` | `debug/info/warn/error/silent` | 日志级别 |
@@ -165,5 +162,4 @@ Provider 描述表：`constants/model-settings.ts`。支持：OpenAI Compatible�
 |---|---|
 | `TOKAN` 拼写错误 | storage key `local:enable-tokan-usage-view`，重写时保持兼容，不改 key |
 | Markdown `html: true` XSS | 已核查：`MessageResponse` 对 html token 做 `escapeHtml`，链接经 `isSafeUrl` 白名单（http/https/mailto），未见直接 XSS；改动模板时仍需注意 |
-| 站点黑白名单实时生效的范围 | 改动实时生效于 popup 状态（`ping`）/正文抽取（`extractText`）；但已挂载的悬浮球/面板不会在变为禁用后自动卸载，需要刷新页面才会消失 |
 | `ollama-ai-provider` 兼容性 | 仍是旧 ProviderV1 类型，通过类型强转接入 AI SDK 6，运行时兼容性待测 |

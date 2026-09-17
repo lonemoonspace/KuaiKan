@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowLeftRight, Bot, Globe2, LayoutDashboard, MessageSquareText, Settings2 } from 'lucide-react';
+import { ArrowLeft, Bot, MessageSquareText, Settings2 } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { browser } from 'wxt/browser';
 import { GithubIcon } from '@/components/icons/GithubIcon';
@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { getUiMessages } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
-type SidebarLink = { label: string; to: string; icon: typeof LayoutDashboard };
+type SidebarLink = { label: string; to: string; icon: typeof Bot };
 
 function OptionsSidebarLink({ label, to, icon: Icon }: SidebarLink) {
   return (
@@ -30,16 +30,11 @@ export function OptionsLayout() {
   const manifest = browser.runtime.getManifest();
   const messages = getUiMessages();
   const workspaceLinks: SidebarLink[] = [
-    { label: messages.options.navigation.interface, to: '/interface', icon: LayoutDashboard },
     { label: messages.options.navigation.models, to: '/models', icon: Bot },
     { label: messages.options.navigation.prompts, to: '/prompts', icon: MessageSquareText },
   ];
   const preferenceLinks: SidebarLink[] = [
     { label: messages.options.navigation.general, to: '/general', icon: Settings2 },
-    { label: messages.options.navigation.siteCustomization, to: '/site-customization', icon: Globe2 },
-  ];
-  const dataLinks: SidebarLink[] = [
-    { label: messages.options.navigation.exportImport, to: '/config_manager', icon: ArrowLeftRight },
   ];
 
   return (
@@ -65,7 +60,6 @@ export function OptionsLayout() {
         <nav aria-label={messages.options.navigationLabel} className="w-60 shrink-0 border-r border-border/70 bg-card/30 px-3 py-5 max-md:w-full max-md:border-b max-md:border-r-0 max-md:px-4">
           <NavGroup title="WORKSPACE" links={workspaceLinks} />
           <NavGroup title="PREFERENCES" links={preferenceLinks} />
-          <NavGroup title="DATA" links={dataLinks} />
         </nav>
         <main className="relative min-w-0 flex-1 px-8 py-7 max-md:px-4 max-md:py-5">
           <div className="mx-auto w-full max-w-5xl">

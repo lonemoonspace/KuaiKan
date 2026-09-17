@@ -24,11 +24,6 @@ import {
   type PromptSettings,
 } from '@/lib/prompt-settings-storage';
 import { sendMessage as sendExtMessage } from '@/lib/messaging';
-import {
-  loadGeneralSettings,
-  saveGeneralSettings,
-} from '@/lib/general-settings-storage';
-import { GENERAL_SETTING_DEFINITIONS } from '@/constants/general-settings';
 import { cn } from '@/lib/utils';
 import { OptionsPageTitle } from '../OptionsPageTitle';
 
@@ -62,7 +57,6 @@ export function PromptsListPage() {
   const messages = getUiMessages();
   const presets = getPromptPresets();
   const [settings, setSettings] = useState<PromptSettings | null>(null);
-  const [summaryLang, setSummaryLang] = useState<string>('');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busyPromptId, setBusyPromptId] = useState<string | null>(null);
 
@@ -73,12 +67,10 @@ export function PromptsListPage() {
       try {
         await sendExtMessage('seedPromptLibrary');
         const loadedSettings = await loadPromptSettings();
-        const generalSettings = await loadGeneralSettings();
 
         if (!active) return;
 
         setSettings(loadedSettings);
-        setSummaryLang(generalSettings.summaryLanguage);
       } catch (error) {
         if (!active) return;
 
@@ -121,19 +113,6 @@ export function PromptsListPage() {
     }
   }
 
-  async function handleUpdateSummaryLang(value: string) {
-    try {
-      const gs = await loadGeneralSettings();
-      if (gs.summaryLanguage === value) return;
-      gs.summaryLanguage = value;
-      await saveGeneralSettings(gs);
-      setSummaryLang(value);
-      toast.success(messages.common.saved);
-    } catch (e) {
-      toast.error(messages.general.saveFailed);
-    }
-  }
-
   function handleDelete(prompt: PromptConfigItem) {
     if (!window.confirm(messages.prompts.deleteConfirm(prompt.name))) {
       return;
@@ -168,38 +147,6 @@ export function PromptsListPage() {
   return (
     <div className="grid max-w-5xl gap-7 pb-16">
       <OptionsPageTitle>{messages.pageTitles.prompts}</OptionsPageTitle>
-
-      {summaryLang !== undefined ? (
-        <section className="flex items-center justify-between gap-4 border-b pb-5">
-          <label className="flex items-baseline gap-2 min-w-0" htmlFor="summary-language">
-            <span 
-              className="text-sm font-semibold whitespace-nowrap"
-              title={GENERAL_SETTING_DEFINITIONS.summaryLanguage.storageKey}
-            >
-              {messages.general.summaryLanguage.label}
-            </span>
-            <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider whitespace-nowrap">
-              (Default: Browser Lang)
-            </span>
-            <span className="text-xs text-muted-foreground truncate">
-              ({messages.general.summaryLanguage.description})
-            </span>
-          </label>
-          <input
-            className="h-8 w-40 shrink-0 rounded-md border bg-background px-2.5 text-xs shadow-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            id="summary-language"
-            value={summaryLang}
-            onChange={(e) => setSummaryLang(e.target.value)}
-            onBlur={(e) => handleUpdateSummaryLang(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.currentTarget.blur();
-              }
-            }}
-            spellCheck={false}
-          />
-        </section>
-      ) : null}
 
       <section className="flex flex-wrap items-center justify-between gap-3 border-b pb-7">
         <div className="flex items-center gap-4">

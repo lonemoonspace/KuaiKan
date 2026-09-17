@@ -43,17 +43,6 @@ function booleanSetting(
   };
 }
 
-function stringSetting(
-  storageKey: StorageItemKey,
-  defaultValue: string | (() => string),
-): GeneralSettingDefinition<string> {
-  return {
-    defaultValue,
-    parse: (value, fallback) => (typeof value === 'string' ? value : fallback),
-    storageKey,
-  };
-}
-
 function pageTextExtractMethodSetting(
   storageKey: StorageItemKey,
   defaultValue: PageTextExtractMethod,
@@ -90,7 +79,6 @@ function summaryInputExceedBehaviourSetting(
 }
 
 export const GENERAL_SETTING_DEFINITIONS = {
-  summaryLanguage: stringSetting('local:summary-lang', () => 'zh-CN'),
   pageTextExtractMethod: pageTextExtractMethodSetting(
     'local:page-text-extract-method',
     'readability',

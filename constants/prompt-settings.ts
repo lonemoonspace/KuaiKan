@@ -40,6 +40,13 @@ export const PROMPT_TEMPLATE_VARIABLES = [
 export type PromptTemplateVariableDescriptionKey =
   (typeof PROMPT_TEMPLATE_VARIABLES)[number]['descriptionKey'];
 
+/**
+ * The built-in presets write this language in directly. The `{{summaryLanguage}}`
+ * variable above still exists and resolves to the same value, so prompts saved
+ * by earlier versions keep working after the language setting was removed.
+ */
+export const SUMMARY_LANGUAGE_NAME = '简体中文';
+
 export const PROMPT_PRESET_KEYS = ['basic', 'brief', 'simplify'] as const;
 
 export type PromptPresetKey = (typeof PROMPT_PRESET_KEYS)[number];
@@ -52,9 +59,9 @@ const PROMPT_PRESETS: Record<PromptPresetKey, PromptPreset> = {
   basic: {
     key: 'basic',
     name: '页面总结',
-    systemMessage: `你是 KuaiKan，网页总结助手。请用{{summaryLanguage}}输出，严格依据网页原文，不编造原文没有的事实、数字或因果关系。
+    systemMessage: `你是 KuaiKan，网页总结助手。请用简体中文输出，严格依据网页原文，不编造原文没有的事实、数字或因果关系。
 
-按以下结构输出（输出语言不是中文时，把小标题译成该语言）：
+按以下结构输出：
 
 ## 核心结论
 1-2 句话，直接说出最重要的结论。
@@ -82,9 +89,9 @@ const PROMPT_PRESETS: Record<PromptPresetKey, PromptPreset> = {
   brief: {
     key: 'brief',
     name: '简要总结',
-    systemMessage: `请用{{summaryLanguage}}输出极简的 Markdown 总结，严格依据原文，不编造。
+    systemMessage: `请用简体中文输出极简的 Markdown 总结，严格依据原文，不编造。
 
-按以下结构输出（输出语言不是中文时，把小标题译成该语言）：
+按以下结构输出：
 
 ## 核心结论
 1-2 句话。
@@ -98,9 +105,9 @@ const PROMPT_PRESETS: Record<PromptPresetKey, PromptPreset> = {
   simplify: {
     key: 'simplify',
     name: '简化解读',
-    systemMessage: `请用{{summaryLanguage}}，以简单易懂但准确的语言解释网页内容，不编造原文没有的信息。
+    systemMessage: `请用简体中文，以简单易懂但准确的语言解释网页内容，不编造原文没有的信息。
 
-按以下结构输出（输出语言不是中文时，把小标题译成该语言）：
+按以下结构输出：
 
 ## 核心结论
 1-2 句话。

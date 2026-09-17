@@ -1,20 +1,12 @@
 import { Readability } from '@mozilla/readability';
 import type { PageTextExtractMethod } from '@/constants/page-extraction';
-import { createLogger } from '@/lib/logger';
-
-const logger = createLogger('lib:page-extraction');
-
-import {
-  findMatchingCustomization,
-  loadSiteCustomization,
-} from '@/lib/site-rules-storage';
 
 export {
   PAGE_TEXT_EXTRACT_METHODS,
   isPageTextExtractMethod,
 } from '@/constants/page-extraction';
 export type { PageTextExtractMethod } from '@/constants/page-extraction';
-export type WebpageExtractMethod = PageTextExtractMethod | 'selectors';
+export type WebpageExtractMethod = PageTextExtractMethod;
 
 export type WebpageContent = {
   articleUrl: string;
@@ -412,85 +404,4 @@ export function parsePageContent(
     default:
       return readabilityParseRead(sourceDocument);
   }
-}
-
-/**
- * Extract page content honoring user-configured site customization rules.
- *
- * If the current URL matches a customization rule's pattern, content is
- * pulled from the rule's CSS selectors (with optional Shadow DOM drill-down).
- * Otherwise falls back to the user's chosen extraction method.
- */
-export async function extractWebpageContent(
-  extractMethod: PageTextExtractMethod = 'readability',
-  sourceDocument: Document = document,
-): Promise<WebpageContent | undefined> {
-  const customizations = await loadSiteCustomization();
-  const url = sourceDocument.location ?? location;
-  const matchedRule = findMatchingCustomization(url, customizations);
-  // logger.debug('site custom:',url,matchedRule)s
-
-  if (matchedRule) {
-    return textsBySelectors(
-      matchedRule.selectors,
-      {
-        shadowRootSelectors: matchedRule.shadowRootSelectors,
-        useShadowRoot: matchedRule.useShadowRoot,
-      },
-      sourceDocument,
-    );
-  }
-  return parsePageContent(extractMethod, sourceDocument);
-}
-
-export function textsBySelectors(
-  selectors: string[],
-  options: {
-    shadowRootSelectors?: string[];
-    useShadowRoot?: boolean;
-  } = {},
-  sourceDocument: Document = document,
-) {
-  if (!selectors.length) {
-    return toWebpageContent(sourceDocument, '', 'selectors');
-  }
-
-  const processedElements = new Set<Element>();
-  const uniqueTexts: string[] = [];
-
-  function collectText(element: Element) {
-    if (processedElements.has(element)) {
-      return;
-    }
-
-    processedElements.add(element);
-    const text = getElementText(element);
-    if (text) {
-      uniqueTexts.push(text);
-    }
-  }
-
-  for (const selector of selectors) {
-    try {
-      if (options.useShadowRoot && options.shadowRootSelectors?.length) {
-        sourceDocument.querySelectorAll(selector).forEach((host) => {
-          for (const shadowSelector of options.shadowRootSelectors ?? []) {
-            try {
-              host.shadowRoot
-                ?.querySelectorAll(shadowSelector)
-                .forEach(collectText);
-            } catch {
-              logger.warn(`Invalid shadow root selector: ${shadowSelector}`);
-            }
-          }
-        });
-      } else {
-        sourceDocument.querySelectorAll(selector).forEach(collectText);
-      }
-    } catch {
-      logger.warn(`Invalid selector: ${selector}`);
-    }
-  }
-
-  return toWebpageContent(sourceDocument, uniqueTexts.join('\n'), 'selectors');
 }
