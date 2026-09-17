@@ -1,5 +1,5 @@
 # Changelog
-## [Unreleased]
+## [3.0.0]
 1. remove: 移除「站点定制」整页，包括站点黑白名单与自定义提取规则。`SiteCustomizationPage`、`lib/site-rules-storage.ts`、`constants/site-rules.ts` 及其测试一并删除；content script 不再按 URL 决定是否注入，正文提取只走通用方式（Readability / DOM 启发式）
 2. remove: 移除提示词页的「总结语言」设置与 `lib/summary-language.ts`。三个内置预设改为直接写「简体中文」（同时删掉「输出语言不是中文时把小标题译成该语言」的说明）；`{{summaryLanguage}}` 变量保留、值恒为「简体中文」，已保存的自定义提示词不会失效。内置预设只对新播种生效，已有的三条预设需要删除后重新播种才会更新
 3. remove: 移除「配置管理」页。导入导出迁到模型页（列表页右上角），范围收窄为模型配置，导出内容包含 `apiKey` 在内的全部字段；导入按 id 覆盖，导入条目缺 `apiKey`/`headers`/`modelIds` 时按「同端点」原则继承本地值，并兼容识别旧版整库导出文件里的 `model-configs`。存储键不变
