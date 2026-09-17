@@ -1,10 +1,36 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createDefaultModelDraft,
   findBaseURLPreset,
   getModelDisplayIcon,
   getModelOptionLabel,
   getModelVendorLabel,
 } from '@/constants/model-settings';
+
+describe('createDefaultModelDraft', () => {
+  it('pre-fills the body override that turns reasoning off on compatible endpoints', () => {
+    expect(createDefaultModelDraft('openai-compatible').extraBody).toEqual({
+      thinking: { type: 'disabled' },
+    });
+  });
+
+  it('gives each draft its own copy so editing one cannot leak into the default', () => {
+    const first = createDefaultModelDraft('openai-compatible');
+    const second = createDefaultModelDraft('openai-compatible');
+
+    expect(first.extraBody).not.toBe(second.extraBody);
+    first.extraBody.thinking = 'changed';
+    expect(second.extraBody).toEqual({ thinking: { type: 'disabled' } });
+  });
+
+  it('leaves providers that reject an unknown parameter without a body override', () => {
+    expect(createDefaultModelDraft('openai').extraBody).toEqual({});
+    expect(createDefaultModelDraft('anthropic').extraBody).toEqual({});
+    expect(createDefaultModelDraft('google').extraBody).toEqual({});
+    expect(createDefaultModelDraft('ollama').extraBody).toEqual({});
+    expect(createDefaultModelDraft('open-responses').extraBody).toEqual({});
+  });
+});
 
 describe('getModelVendorLabel', () => {
   it('uses the base-URL preset label so OpenAI-compatible vendors are told apart', () => {

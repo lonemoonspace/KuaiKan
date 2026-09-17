@@ -5,20 +5,14 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
   getModelDisplayIcon,
-  getModelOptionLabel,
   getModelProviderDefinition,
-  getModelVendorLabel,
   type ModelConfigItem,
 } from '@/constants/model-settings';
-import type { PromptConfigItem } from '@/constants/prompt-settings';
 import {
   loadModelSettings,
   setDefaultModelConfig,
+  setModelConfigModelId,
 } from '@/lib/model-settings-storage';
-import {
-  loadPromptSettings,
-  setDefaultPrompt,
-} from '@/lib/prompt-settings-storage';
 import { sendMessage as sendExtMessage } from '@/lib/messaging';
 import { getUiMessages } from '@/lib/i18n';
 
@@ -30,9 +24,7 @@ function App() {
   const manifest = browser.runtime.getManifest();
   const messages = getUiMessages();
   const [models, setModels] = useState<ModelConfigItem[]>([]);
-  const [prompts, setPrompts] = useState<PromptConfigItem[]>([]);
   const [currentModelId, setCurrentModelId] = useState('');
-  const [currentPromptId, setCurrentPromptId] = useState('');
   const [copying, setCopying] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
   const [activeTabId, setActiveTabId] = useState<number | null>(null);
@@ -42,18 +34,11 @@ function App() {
     let active = true;
     (async () => {
       await sendExtMessage('seedPromptLibrary');
-      const [modelSettings, promptSettings] = await Promise.all([
-        loadModelSettings(),
-        loadPromptSettings(),
-      ]);
+      const modelSettings = await loadModelSettings();
       if (!active) return;
       setModels(modelSettings.models);
-      setPrompts(promptSettings.prompts);
       setCurrentModelId(
         modelSettings.defaultModelId || modelSettings.models[0]?.id || '',
-      );
-      setCurrentPromptId(
-        promptSettings.defaultPromptId || promptSettings.prompts[0]?.id || '',
       );
     })();
     return () => {
@@ -90,21 +75,24 @@ function App() {
     };
   }, []);
 
-  const handleModelChange = async (id: string) => {
+  // The provider row lists *configs*, grouped under their vendor: one config is
+  // one endpoint plus one API key, and a vendor name alone cannot address it
+  // when two configs point at the same vendor.
+  const handleConfigChange = async (id: string) => {
     setCurrentModelId(id);
     await setDefaultModelConfig(id);
   };
 
-  // Switching vendor selects that vendor's first model, since a model config
-  // (not the vendor) is what actually gets persisted as the default.
-  const handleVendorChange = async (vendor: string) => {
-    const firstModel = models.find((m) => getModelVendorLabel(m) === vendor);
-    if (firstModel) await handleModelChange(firstModel.id);
-  };
+  // Switching the model rewrites only the selected config's `modelId`; the
+  // config (and with it the endpoint and API key) stays put.
+  const handleModelIdChange = async (modelId: string) => {
+    const config = models.find((m) => m.id === currentModelId);
+    if (!config || !modelId) return;
 
-  const handlePromptChange = async (id: string) => {
-    setCurrentPromptId(id);
-    await setDefaultPrompt(id);
+    setModels((current) =>
+      current.map((m) => (m.id === config.id ? { ...m, modelId } : m)),
+    );
+    await setModelConfigModelId(config.id, modelId);
   };
 
   const handleCopyPage = async () => {
@@ -160,9 +148,27 @@ function App() {
   };
 
   const currentModel = models.find((m) => m.id === currentModelId);
-  const currentVendor = currentModel ? getModelVendorLabel(currentModel) : '';
-  const vendors = Array.from(new Set(models.map(getModelVendorLabel)));
-  const vendorModels = models.filter((m) => getModelVendorLabel(m) === currentVendor);
+  // The row lists configs by their own name. A vendor group header was tried
+  // and read as noise: the config name is what the user recognises, and it is
+  // already unique across the whole list.
+  const configOptions = models.map((model) => ({
+    value: model.id,
+    label: model.name,
+  }));
+  // The model row lists the selected config's fetched pool. A config that was
+  // never fetched — or one whose id was typed by hand — degrades to the single
+  // id it currently uses, so the row is never empty.
+  const modelIdOptions = (() => {
+    if (!currentModel) return [] as Array<{ value: string; label: string }>;
+
+    const pool = currentModel.modelIds.includes(currentModel.modelId)
+      ? currentModel.modelIds
+      : [currentModel.modelId, ...currentModel.modelIds];
+
+    return pool
+      .filter((id) => id)
+      .map((id) => ({ value: id, label: id }));
+  })();
 
   return (
     <main className="grid min-w-[320px] max-w-3xl gap-3 bg-background px-3 py-3">
@@ -197,22 +203,16 @@ function App() {
       <section className="grid gap-1.5">
         <SelectRow
           label={messages.popup.provider}
-          value={currentVendor}
-          onChange={handleVendorChange}
-          options={vendors.map((vendor) => ({ value: vendor, label: vendor }))}
+          value={currentModelId}
+          onChange={handleConfigChange}
+          options={configOptions}
           icon={currentModel ? <ModelIcon model={currentModel} /> : undefined}
         />
         <SelectRow
           label={messages.popup.model}
-          value={currentModelId}
-          onChange={handleModelChange}
-          options={vendorModels.map((m) => ({ value: m.id, label: getModelOptionLabel(m) }))}
-        />
-        <SelectRow
-          label={messages.popup.prompt}
-          value={currentPromptId}
-          onChange={handlePromptChange}
-          options={prompts.map((p) => ({ value: p.id, label: p.name }))}
+          value={currentModel?.modelId ?? ''}
+          onChange={handleModelIdChange}
+          options={modelIdOptions}
         />
       </section>
 

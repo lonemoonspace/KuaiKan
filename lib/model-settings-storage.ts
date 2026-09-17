@@ -50,6 +50,22 @@ function cleanExtraBody(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function cleanModelIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const item of value) {
+    const id = cleanString(item);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    result.push(id);
+  }
+
+  return result;
+}
+
 function cleanNonNegativeNumber(value: unknown) {
   const numberValue =
     typeof value === 'number'
@@ -107,6 +123,7 @@ function normalizeModel(value: ModelConfigItem): ModelConfigItem | null {
     inputTokenPrice: cleanNonNegativeNumber(value.inputTokenPrice),
     maxInputTokens: cleanNonNegativeNumber(value.maxInputTokens),
     modelId,
+    modelIds: cleanModelIds(value.modelIds),
     name,
     outputTokenPrice: cleanNonNegativeNumber(value.outputTokenPrice),
     priceUnit: cleanString(value.priceUnit) || '$',
@@ -191,6 +208,7 @@ function validateDraft(draft: ModelDraft): ModelDraft {
     inputTokenPrice: cleanNonNegativeNumber(draft.inputTokenPrice),
     maxInputTokens: cleanNonNegativeNumber(draft.maxInputTokens),
     modelId,
+    modelIds: cleanModelIds(draft.modelIds),
     name,
     outputTokenPrice: cleanNonNegativeNumber(draft.outputTokenPrice),
     priceUnit: cleanString(draft.priceUnit) || '$',
@@ -382,6 +400,39 @@ export async function setDefaultModelConfig(id: string) {
   await writeModelSettings({
     defaultModelId: id,
     models: settings.models,
+  });
+
+  return true;
+}
+
+/**
+ * Switch which of a config's pooled models is in use, without touching any
+ * other field. The panel and popup pickers call this; going through
+ * `updateModelConfig()` instead would require a full draft and would re-run
+ * the duplicate-name and base-URL validation for a one-field change.
+ *
+ * `modelId` only has to be non-empty — a value typed by hand and absent from
+ * the pool is legitimate, and switching to it must not rewrite the pool.
+ */
+export async function setModelConfigModelId(configId: string, modelId: string) {
+  const settings = await loadModelSettings();
+  const index = settings.models.findIndex((model) => model.id === configId);
+  const nextModelId = cleanString(modelId);
+
+  if (index === -1 || !nextModelId) {
+    return false;
+  }
+
+  if (settings.models[index].modelId === nextModelId) {
+    return true;
+  }
+
+  const models = [...settings.models];
+  models[index] = { ...models[index], modelId: nextModelId };
+
+  await writeModelSettings({
+    defaultModelId: settings.defaultModelId,
+    models,
   });
 
   return true;

@@ -41,6 +41,11 @@ type ModelEditorProps = {
   submitLabel: string;
 };
 
+// Sentinel for "the current model id is not in the fetched pool". Radix/HTML
+// selects need a value that matches one of the rendered options, so a pooled
+// vs hand-typed state has to be representable.
+const CUSTOM_MODEL_OPTION = '__kuai-custom-model-id__';
+
 function stringifyJson(value: Record<string, unknown> | Record<string, string>) {
   return Object.keys(value).length ? JSON.stringify(value, null, 2) : '';
 }
@@ -94,6 +99,8 @@ export function ModelEditor({
     [draft.providerId],
   );
 
+  const isPooledModelId = draft.modelIds.includes(draft.modelId);
+
   useEffect(() => {
     setDraft(initialDraft);
     setHeadersText(stringifyJson(initialDraft.headers));
@@ -120,7 +127,14 @@ export function ModelEditor({
       ...currentDraft,
       apiMode: nextDefaults.apiMode,
       baseURL: nextDefaults.baseURL,
+      // Body overrides are provider-specific, so they follow the provider the
+      // same way apiMode/baseURL/modelId do. Carrying the old ones over would
+      // ship e.g. DeepSeek's `thinking` switch to a provider that rejects it.
+      extraBody: nextDefaults.extraBody,
       modelId: nextDefaults.modelId,
+      // The pool belongs to the previous endpoint; a different provider means
+      // a different `/models` list.
+      modelIds: [],
       name:
         currentDraft.name ===
         getModelProviderDefinition(currentDraft.providerId).label
@@ -128,6 +142,7 @@ export function ModelEditor({
           : currentDraft.name,
       providerId,
     }));
+    setExtraBodyText(stringifyJson(nextDefaults.extraBody));
     setRemoteModels([]);
     setIsModelPickerOpen(false);
     setAreBaseURLPresetsExpanded(false);
@@ -150,8 +165,17 @@ export function ModelEditor({
         return;
       }
 
+      // Keep the fetched list on the draft so it is saved with the config.
+      // Without this the list only lived in component state and was lost on
+      // close, leaving the pickers in the panel and popup with nothing to
+      // offer beyond the single currently-selected id.
+      setDraft((currentDraft) => ({
+        ...currentDraft,
+        modelIds: models.map((model) => model.id),
+      }));
+
       setIsModelPickerOpen(true);
-      toast.success('Models loaded.');
+      toast.success(`${models.length} models loaded.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Models failed to load.');
     } finally {
@@ -475,6 +499,36 @@ export function ModelEditor({
               spellCheck={false}
               value={draft.modelId}
             />
+            {draft.modelIds.length > 0 ? (
+              <div className="grid gap-1">
+                <select
+                  aria-label="Pick from fetched models"
+                  className="h-9 rounded-md border bg-background px-3 text-sm shadow-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  onChange={(event) => {
+                    const next = event.currentTarget.value;
+                    if (next === CUSTOM_MODEL_OPTION) return;
+                    updateDraft('modelId', next);
+                  }}
+                  value={isPooledModelId ? draft.modelId : CUSTOM_MODEL_OPTION}
+                >
+                  {isPooledModelId ? null : (
+                    <option value={CUSTOM_MODEL_OPTION}>
+                      {draft.modelId || 'Custom model id'}
+                    </option>
+                  )}
+                  {draft.modelIds.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  {draft.modelIds.length} models fetched from this endpoint. Pick one to set the
+                  model this config uses — it is saved with the config and offered by the quick
+                  switchers.
+                </p>
+              </div>
+            ) : null}
           </div>
 
           {provider.requiresApiKey ? (

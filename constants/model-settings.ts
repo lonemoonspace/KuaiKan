@@ -63,6 +63,12 @@ export type BaseURLPreset = {
 export const MODEL_PROVIDER_DEFINITIONS: {
   baseURLPresets: BaseURLPreset[];
   defaultBaseURL: string;
+  /**
+   * Body overrides a new config starts with. Only set this for providers whose
+   * API tolerates (or expects) the extra fields: an unknown top-level parameter
+   * is a 400 on OpenAI, Anthropic and Google.
+   */
+  defaultExtraBody?: Record<string, unknown>;
   defaultModelId: string;
   desc: string;
   docsUrl: string;
@@ -129,6 +135,10 @@ export const MODEL_PROVIDER_DEFINITIONS: {
       { label: 'Ollama OpenAI', url: 'http://localhost:11434/v1', iconPath: '/llm-icons/ollama.svg' },
     ],
     defaultBaseURL: '',
+    // Third-party compatible endpoints (DeepSeek & co.) accept this switch and
+    // reasoning models spend most of their latency on thinking the user did
+    // not ask for; official OpenAI/Anthropic/Google reject the field outright.
+    defaultExtraBody: { thinking: { type: 'disabled' } },
     defaultModelId: '',
     desc: 'Generic OpenAI-compatible Chat Completions provider for compatible /v1 APIs such as DashScope, SiliconFlow, OpenRouter, LM Studio, or local proxies.',
     docsUrl: 'https://ai-sdk.dev/providers/openai-compatible-providers',
@@ -251,6 +261,13 @@ export type ModelConfigItem = {
   inputTokenPrice: number;
   maxInputTokens: number;
   modelId: string;
+  /**
+   * Model pool fetched from the provider's `/models` endpoint and kept on the
+   * config so the model can be switched without re-fetching. `modelId` is the
+   * entry currently in use; this list is only the set of choices. Empty for
+   * configs that were never fetched (and for rows written by older versions).
+   */
+  modelIds: string[];
   name: string;
   outputTokenPrice: number;
   priceUnit: string;
@@ -283,12 +300,13 @@ export function createDefaultModelDraft(
     apiKey: '',
     apiMode: provider.id === 'open-responses' ? 'responses' : 'chat',
     baseURL: provider.defaultBaseURL,
-    extraBody: {},
+    extraBody: { ...(provider.defaultExtraBody ?? {}) },
     headers: {},
     iconPath: '',
     inputTokenPrice: 0,
     maxInputTokens: 0,
     modelId: provider.defaultModelId,
+    modelIds: [],
     name: provider.label,
     outputTokenPrice: 0,
     priceUnit: '$',
