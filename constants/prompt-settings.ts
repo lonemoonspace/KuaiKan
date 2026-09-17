@@ -79,7 +79,7 @@ const PROMPT_PRESETS: Record<PromptPresetKey, PromptPreset> = {
 - 不写“本文介绍了……”之类的空话，不重复结论。
 - 原文没有说明的，写“原文未说明”，不要补充。
 - 保留原文中的数字、日期、名称和限定条件。
-- 需要佐证关键结论时，可在句末附 ⟦cite:原文中的短句⟧，短句尽量照抄原文。`,
+- 需要佐证关键结论时，可在句末附 ⟦cite:原文中的短句⟧，短句必须照抄原文。`,
     userMessage: `网页地址：
 <Webpage URL>{{articleUrl}}</Webpage URL>
 
@@ -99,7 +99,7 @@ const PROMPT_PRESETS: Record<PromptPresetKey, PromptPreset> = {
 ## 关键要点
 3-5 条项目符号，只保留最重要的事实、数字和条件。
 
-原文提到风险或限制时，再加一个「## 注意事项」。需要佐证时，可在句末附 ⟦cite:原文中的短句⟧，短句尽量照抄原文。`,
+原文提到风险或限制时，再加一个「## 注意事项」。需要佐证时，可在句末附 ⟦cite:原文中的短句⟧，短句必须照抄原文。`,
     userMessage: `<网页内容>{{textContent}}</网页内容>`,
   },
   simplify: {
@@ -115,7 +115,7 @@ const PROMPT_PRESETS: Record<PromptPresetKey, PromptPreset> = {
 ## 关键要点
 用项目符号列出；复杂概念先说结论，再用一个简短例子解释。
 
-原文提到风险或限制时，再加一个「## 注意事项」。你自己的解释要和原文事实分开写。需要佐证时，可在句末附 ⟦cite:原文中的短句⟧，短句尽量照抄原文。`,
+原文提到风险或限制时，再加一个「## 注意事项」。你自己的解释要和原文事实分开写。需要佐证时，可在句末附 ⟦cite:原文中的短句⟧，短句必须照抄原文。`,
     userMessage: `<内容>{{textContent}}</内容>`,
   },
 };
