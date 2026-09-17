@@ -284,7 +284,7 @@ export function ModelsListPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
                 className={cn(
-                  "grid gap-4 rounded-md border p-4 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] transition-colors",
+                  "grid gap-2 rounded-md border p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] transition-colors",
                   isDefault ? "border-primary/30 bg-primary/5" : "bg-card"
                 )}
                 key={model.id}
@@ -327,52 +327,57 @@ export function ModelsListPage() {
                     ) : null}
                   </label>
 
-                  <dl className="mt-4 grid gap-3 text-sm lg:grid-cols-2">
-                    <div className="min-w-0">
-                      <dt className="text-xs font-medium uppercase text-muted-foreground">
-                        {messages.models.provider}
-                      </dt>
-                      <dd className="mt-1 break-words">{provider.label}</dd>
-                    </div>
-                    {provider.supportsBaseURL ? (
-                      <div className="min-w-0 lg:col-span-2">
-                        <dt className="text-xs font-medium uppercase text-muted-foreground">
-                          {messages.models.baseUrl}
-                        </dt>
-                        <dd className="mt-1 break-words font-mono text-xs">
-                          {model.baseURL}
-                        </dd>
-                      </div>
-                    ) : null}
-                    {provider.supportsApiMode ? (
+                  <details className="mt-1.5">
+                    <summary className="cursor-pointer select-none text-xs text-muted-foreground transition-colors hover:text-foreground">
+                      详情
+                    </summary>
+                    <dl className="mt-2 grid gap-2 text-xs lg:grid-cols-2">
                       <div className="min-w-0">
-                        <dt className="text-xs font-medium uppercase text-muted-foreground">
-                          {messages.models.apiMode}
+                        <dt className="text-[11px] font-medium uppercase text-muted-foreground">
+                          {messages.models.provider}
                         </dt>
-                        <dd className="mt-1">{model.apiMode}</dd>
+                        <dd className="mt-0.5 break-words">{provider.label}</dd>
                       </div>
-                    ) : null}
-                    {model.maxInputTokens ? (
-                      <div className="min-w-0">
-                        <dt className="text-xs font-medium uppercase text-muted-foreground">
-                          {messages.models.maxInputTokens}
-                        </dt>
-                        <dd className="mt-1">{model.maxInputTokens}</dd>
-                      </div>
-                    ) : null}
-                    {model.inputTokenPrice || model.outputTokenPrice ? (
-                      <div className="min-w-0">
-                        <dt className="text-xs font-medium uppercase text-muted-foreground">
-                          {messages.models.price}
-                        </dt>
-                        <dd className="mt-1">
-                          {model.priceUnit} {model.inputTokenPrice || 0}/M input
-                          {' / '}
-                          {model.priceUnit} {model.outputTokenPrice || 0}/M output
-                        </dd>
-                      </div>
-                    ) : null}
-                  </dl>
+                      {provider.supportsBaseURL ? (
+                        <div className="min-w-0 lg:col-span-2">
+                          <dt className="text-[11px] font-medium uppercase text-muted-foreground">
+                            {messages.models.baseUrl}
+                          </dt>
+                          <dd className="mt-0.5 break-words font-mono text-[11px]">
+                            {model.baseURL}
+                          </dd>
+                        </div>
+                      ) : null}
+                      {provider.supportsApiMode ? (
+                        <div className="min-w-0">
+                          <dt className="text-[11px] font-medium uppercase text-muted-foreground">
+                            {messages.models.apiMode}
+                          </dt>
+                          <dd className="mt-0.5">{model.apiMode}</dd>
+                        </div>
+                      ) : null}
+                      {model.maxInputTokens ? (
+                        <div className="min-w-0">
+                          <dt className="text-[11px] font-medium uppercase text-muted-foreground">
+                            {messages.models.maxInputTokens}
+                          </dt>
+                          <dd className="mt-0.5">{model.maxInputTokens}</dd>
+                        </div>
+                      ) : null}
+                      {model.inputTokenPrice || model.outputTokenPrice ? (
+                        <div className="min-w-0">
+                          <dt className="text-[11px] font-medium uppercase text-muted-foreground">
+                            {messages.models.price}
+                          </dt>
+                          <dd className="mt-0.5">
+                            {model.priceUnit} {model.inputTokenPrice || 0}/M input
+                            {' / '}
+                            {model.priceUnit} {model.outputTokenPrice || 0}/M output
+                          </dd>
+                        </div>
+                      ) : null}
+                    </dl>
+                  </details>
                 </div>
 
                 <div className="group flex items-start gap-2 sm:justify-end">

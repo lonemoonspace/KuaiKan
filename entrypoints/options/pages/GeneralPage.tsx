@@ -1,9 +1,8 @@
 import { ExternalLink, RotateCcw } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -65,117 +64,90 @@ type BooleanSettingKey = Exclude<
   'pageTextExtractMethod' | 'logLevel' | 'summaryInputExceedBehaviour'
 >;
 
-type SectionKey = 'display' | 'triggers' | 'contextMenu';
-
 /**
- * Grouping of the boolean switches. `display` is the former interface page —
- * the two pages were merged so every setting lives in one list.
+ * One switch per row, grouped under a lightweight label. Everything shares the
+ * same row shape so the page reads as a single list rather than a stack of
+ * cards.
  */
-const BOOLEAN_SECTIONS: Array<{
-  key: SectionKey;
-  fields: BooleanSettingKey[];
-}> = [
-  { key: 'display', fields: ['enableFloatingBall', 'enableTokenUsageView'] },
-  {
-    key: 'triggers',
-    fields: [
-      'enableSummaryWindowDefault',
-      'enableAutoBeginSummary',
-      'enableAutoBeginSummaryByActionOrContextTrigger',
-    ],
-  },
-  { key: 'contextMenu', fields: ['enableContextMenuSummarizeThisPage'] },
-];
-
-function ToggleRow({
-  checked,
-  caution,
-  description,
+function Group({
+  children,
   label,
-  onChange,
-  storageKey,
 }: {
-  checked: boolean;
-  caution?: string;
-  description: string;
+  children: ReactNode;
   label: string;
-  onChange: (checked: boolean) => void;
-  storageKey: string;
 }) {
   return (
-    <label className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b py-4 last:border-b-0 max-sm:grid-cols-1">
-      <span className="min-w-0">
+    <section className="mb-5 last:mb-0">
+      <h2 className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
+        {label}
+      </h2>
+      <div className="rounded-lg border border-border/60 bg-card/40 px-4">{children}</div>
+    </section>
+  );
+}
+
+function Row({
+  caution,
+  control,
+  description,
+  label,
+  storageKey,
+}: {
+  caution?: string;
+  control: ReactNode;
+  description?: string;
+  label: string;
+  storageKey?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-border/60 py-3 last:border-b-0">
+      <div className="min-w-0">
         <span className="block text-sm font-medium" title={storageKey}>
           {label}
         </span>
         {description ? (
-          <span className="mt-1 block max-w-2xl text-sm leading-6 text-muted-foreground">
+          <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
             {description}
           </span>
         ) : null}
         {caution ? (
-          <span className="mt-2 block border-l-2 border-amber-500 bg-amber-50 px-2 py-1 text-xs leading-5 text-amber-950">
+          <span className="mt-1 block border-l-2 border-amber-500 bg-amber-50 px-2 py-0.5 text-[11px] leading-4 text-amber-950">
             {caution}
           </span>
         ) : null}
-      </span>
-      <Switch checked={checked} onCheckedChange={onChange} />
-    </label>
+      </div>
+      <div className="shrink-0">{control}</div>
+    </div>
   );
 }
 
-function RadioRow({
-  checked,
-  description,
-  isDefault,
-  label,
-  name,
-  onSelect,
+function Segmented<Value extends string>({
+  onChange,
+  options,
   value,
 }: {
-  checked: boolean;
-  description?: string;
-  isDefault?: boolean;
-  label: string;
-  name: string;
-  onSelect: () => void;
-  value: string;
+  onChange: (value: Value) => void;
+  options: Array<{ label: string; value: Value }>;
+  value: Value;
 }) {
   return (
-    <label className="grid cursor-pointer grid-cols-[16px_minmax(0,1fr)] gap-3 rounded-md border p-4 transition-colors has-[:checked]:border-primary has-[:checked]:bg-muted/60">
-      <input
-        checked={checked}
-        className="mt-1 size-4 accent-primary"
-        name={name}
-        onChange={onSelect}
-        type="radio"
-        value={value}
-      />
-      <span>
-        <span className="flex items-center gap-2 text-sm font-medium">
-          {label}
-          {isDefault ? (
-            <span className="text-xs font-normal text-muted-foreground/50">(Default)</span>
-          ) : null}
-        </span>
-        {description ? (
-          <span className="mt-1 block max-w-xl text-sm leading-6 text-muted-foreground">
-            {description}
-          </span>
-        ) : null}
-      </span>
-    </label>
-  );
-}
-
-function SectionHeader({ description, title }: { description: string; title: string }) {
-  return (
-    <header className="mb-4 border-b pb-2">
-      <h2 className="text-xl font-extrabold text-primary">{title}</h2>
-      {description ? (
-        <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>
-      ) : null}
-    </header>
+    <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5">
+      {options.map((option) => (
+        <button
+          className={cn(
+            'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+            value === option.value
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+          key={option.value}
+          onClick={() => onChange(option.value)}
+          type="button"
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -284,81 +256,60 @@ export function GeneralPage() {
     );
   }
 
+  const toggleRow = (field: BooleanSettingKey) => {
+    const fieldMessage = messages.general.settings[field];
+
+    return (
+      <Row
+        caution={fieldMessage.caution}
+        control={
+          <Switch
+            checked={settings[field]}
+            onCheckedChange={(checked) => updateSetting(field, checked)}
+          />
+        }
+        description={fieldMessage.description}
+        key={field}
+        label={fieldMessage.label}
+        storageKey={GENERAL_SETTING_DEFINITIONS[field].storageKey}
+      />
+    );
+  };
+
+  const themeControl = (
+    <Segmented
+      onChange={(value) => setTheme(value)}
+      options={[
+        { label: '浅色', value: 'light' as const },
+        { label: '深色', value: 'dark' as const },
+        { label: '跟随系统', value: 'system' as const },
+      ]}
+      value={theme as 'light' | 'dark' | 'system'}
+    />
+  );
+
   return (
-    <div className="grid max-w-4xl gap-7 pb-24">
+    <div className="max-w-4xl pb-16">
       <OptionsPageTitle>{messages.general.title}</OptionsPageTitle>
 
-      {BOOLEAN_SECTIONS.map((section) => {
-        const sectionCopy =
-          section.key === 'display'
-            ? { title: '界面与显示', description: '主题，以及页面内的显示开关。' }
-            : messages.general.sections[section.key];
+      <Group label="界面与显示">
+        <Row control={themeControl} description="设置页与页面内面板共用。" label="主题" />
+        {toggleRow('enableFloatingBall')}
+        {toggleRow('enableTokenUsageView')}
+      </Group>
 
-        return (
-          <section key={section.key} aria-label={sectionCopy.title}>
-            <SectionHeader description={sectionCopy.description} title={sectionCopy.title} />
+      <Group label="总结触发">
+        {toggleRow('enableSummaryWindowDefault')}
+        {toggleRow('enableAutoBeginSummary')}
+        {toggleRow('enableAutoBeginSummaryByActionOrContextTrigger')}
+        {toggleRow('enableContextMenuSummarizeThisPage')}
+      </Group>
 
-            {section.key === 'display' ? (
-              <div className="grid gap-2 border-b py-4">
-                <span className="text-sm font-medium">主题</span>
-                <RadioGroup
-                  className="flex flex-wrap gap-2"
-                  onValueChange={(value) => setTheme(value as 'light' | 'dark' | 'system')}
-                  value={theme}
-                >
-                  {[
-                    { value: 'light', label: '浅色' },
-                    { value: 'dark', label: '深色' },
-                    { value: 'system', label: '跟随系统' },
-                  ].map((option) => (
-                    <label
-                      className={cn(
-                        'cursor-pointer rounded-md border px-3 py-1.5 text-xs transition-colors',
-                        theme === option.value
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border bg-muted/30 text-muted-foreground hover:bg-muted',
-                      )}
-                      key={option.value}
-                    >
-                      <RadioGroupItem className="sr-only" value={option.value} />
-                      {option.label}
-                    </label>
-                  ))}
-                </RadioGroup>
-              </div>
-            ) : null}
-
-            {section.fields.map((field) => {
-              const fieldMessage = messages.general.settings[field];
-              const definition = GENERAL_SETTING_DEFINITIONS[field];
-
-              return (
-                <ToggleRow
-                  caution={fieldMessage.caution}
-                  checked={settings[field]}
-                  description={fieldMessage.description}
-                  key={field}
-                  label={fieldMessage.label}
-                  onChange={(checked) => updateSetting(field, checked)}
-                  storageKey={definition.storageKey}
-                />
-              );
-            })}
-          </section>
-        );
-      })}
-
-      <section aria-label="默认模型与提示词">
-        <SectionHeader
-          description="新开的总结面板默认使用这两个选择。"
-          title="默认模型与提示词"
-        />
-
-        <div className="grid gap-3">
-          <div className="flex items-center justify-between gap-4 border-b py-4">
-            <span className="text-sm font-medium">{messages.options.header.defaultModel}</span>
-            <div className="flex items-center gap-2">
-              {modelSettings ? (
+      <Group label="默认模型与提示词">
+        <Row
+          control={
+            modelSettings ? (
+              <div className="flex items-center gap-1.5">
                 <Select
                   onValueChange={async (value) => {
                     await setDefaultModelConfig(value);
@@ -366,7 +317,7 @@ export function GeneralPage() {
                   }}
                   value={modelSettings.defaultModelId ?? undefined}
                 >
-                  <SelectTrigger className="h-8 w-[220px] text-xs">
+                  <SelectTrigger className="h-8 w-[200px] text-xs">
                     <SelectValue placeholder={messages.options.header.noModels} />
                   </SelectTrigger>
                   <SelectContent>
@@ -384,23 +335,25 @@ export function GeneralPage() {
                     ))}
                   </SelectContent>
                 </Select>
-              ) : (
-                <div className="h-8 w-[220px] animate-pulse rounded-md bg-muted" />
-              )}
-              <Link
-                className="shrink-0 text-muted-foreground transition-colors hover:text-primary"
-                title={messages.options.header.defaultModel}
-                to="/models"
-              >
-                <ExternalLink className="size-4" />
-              </Link>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-4 py-4">
-            <span className="text-sm font-medium">{messages.options.header.defaultPrompt}</span>
-            <div className="flex items-center gap-2">
-              {promptSettings ? (
+                <Link
+                  className="text-muted-foreground transition-colors hover:text-primary"
+                  title={messages.options.header.defaultModel}
+                  to="/models"
+                >
+                  <ExternalLink className="size-4" />
+                </Link>
+              </div>
+            ) : (
+              <div className="h-8 w-[200px] animate-pulse rounded-md bg-muted" />
+            )
+          }
+          description="新开的总结面板默认使用。"
+          label={messages.options.header.defaultModel}
+        />
+        <Row
+          control={
+            promptSettings ? (
+              <div className="flex items-center gap-1.5">
                 <Select
                   onValueChange={async (value) => {
                     await setDefaultPrompt(value);
@@ -408,7 +361,7 @@ export function GeneralPage() {
                   }}
                   value={promptSettings.defaultPromptId ?? undefined}
                 >
-                  <SelectTrigger className="h-8 w-[220px] text-xs">
+                  <SelectTrigger className="h-8 w-[200px] text-xs">
                     <SelectValue placeholder={messages.options.header.noPrompts} />
                   </SelectTrigger>
                   <SelectContent>
@@ -419,115 +372,113 @@ export function GeneralPage() {
                     ))}
                   </SelectContent>
                 </Select>
-              ) : (
-                <div className="h-8 w-[220px] animate-pulse rounded-md bg-muted" />
-              )}
-              <Link
-                className="shrink-0 text-muted-foreground transition-colors hover:text-primary"
-                title={messages.options.header.defaultPrompt}
-                to="/prompts"
-              >
-                <ExternalLink className="size-4" />
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section aria-label={messages.pageExtraction.method.title}>
-        <SectionHeader
-          description={messages.pageExtraction.method.description}
-          title={messages.pageExtraction.method.title}
+                <Link
+                  className="text-muted-foreground transition-colors hover:text-primary"
+                  title={messages.options.header.defaultPrompt}
+                  to="/prompts"
+                >
+                  <ExternalLink className="size-4" />
+                </Link>
+              </div>
+            ) : (
+              <div className="h-8 w-[200px] animate-pulse rounded-md bg-muted" />
+            )
+          }
+          label={messages.options.header.defaultPrompt}
         />
-        <div className="grid gap-3">
-          {EXTRACT_METHOD_OPTIONS.map((method) => {
-            const methodMessage = messages.pageExtraction.methods[method];
+      </Group>
 
-            return (
-              <RadioRow
-                checked={settings.pageTextExtractMethod === method}
-                description={methodMessage.description}
-                isDefault={GENERAL_SETTING_DEFINITIONS.pageTextExtractMethod.defaultValue === method}
-                key={method}
-                label={methodMessage.label}
-                name="page-text-extract-method"
-                onSelect={() => updateSetting('pageTextExtractMethod', method)}
-                value={method}
-              />
-            );
-          })}
-        </div>
-      </section>
-
-      <section aria-label="超长内容裁剪">
-        <SectionHeader
-          description="当网页内容超过所选模型的最大输入 token 时，保留哪一部分送入模型。"
-          title="超长内容裁剪"
+      <Group label="页面内容">
+        <Row
+          control={
+            <Segmented
+              onChange={(value) => updateSetting('pageTextExtractMethod', value)}
+              options={EXTRACT_METHOD_OPTIONS.map((method) => ({
+                label: messages.pageExtraction.methods[method].label,
+                value: method,
+              }))}
+              value={settings.pageTextExtractMethod}
+            />
+          }
+          description={
+            messages.pageExtraction.methods[settings.pageTextExtractMethod].description
+          }
+          label={messages.pageExtraction.method.title}
+          storageKey={GENERAL_SETTING_DEFINITIONS.pageTextExtractMethod.storageKey}
         />
-        <div className="grid gap-3">
-          {SUMMARY_INPUT_EXCEED_BEHAVIOURS.map((behaviour) => (
-            <RadioRow
-              checked={settings.summaryInputExceedBehaviour === behaviour}
-              description={OVERFLOW_LABELS[behaviour].description}
-              isDefault={
-                GENERAL_SETTING_DEFINITIONS.summaryInputExceedBehaviour.defaultValue === behaviour
+        <Row
+          control={
+            <Segmented
+              onChange={(value) => updateSetting('summaryInputExceedBehaviour', value)}
+              options={SUMMARY_INPUT_EXCEED_BEHAVIOURS.map((behaviour) => ({
+                label: OVERFLOW_LABELS[behaviour].label,
+                value: behaviour,
+              }))}
+              value={settings.summaryInputExceedBehaviour}
+            />
+          }
+          description={OVERFLOW_LABELS[settings.summaryInputExceedBehaviour].description}
+          label="超长内容"
+          storageKey={GENERAL_SETTING_DEFINITIONS.summaryInputExceedBehaviour.storageKey}
+        />
+      </Group>
+
+      <Group label="高级">
+        <Row
+          control={
+            <Select
+              onValueChange={(value) =>
+                updateSetting('logLevel', value as LogLevel)
               }
-              key={behaviour}
-              label={OVERFLOW_LABELS[behaviour].label}
-              name="summary-input-exceed-behaviour"
-              onSelect={() => updateSetting('summaryInputExceedBehaviour', behaviour)}
-              value={behaviour}
-            />
-          ))}
-        </div>
-      </section>
+              value={settings.logLevel}
+            >
+              <SelectTrigger className="h-8 w-[120px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LOG_LEVEL_OPTIONS.map((level) => (
+                  <SelectItem key={level} value={level}>
+                    {level.toUpperCase()}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+          description="排查问题时把级别调低。"
+          label="日志级别"
+          storageKey={GENERAL_SETTING_DEFINITIONS.logLevel.storageKey}
+        />
+        <Row
+          control={
+            <button
+              className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              onClick={() => {
+                void import('wxt/browser').then(({ browser }) => {
+                  browser.tabs.create({ url: 'chrome://extensions/shortcuts' });
+                });
+              }}
+              type="button"
+            >
+              <ExternalLink className="size-3.5" />
+              去设置
+            </button>
+          }
+          description="在浏览器里配置打开面板的快捷键。"
+          label="快捷键"
+        />
+      </Group>
 
-      <section aria-label="高级">
-        <SectionHeader description="排查问题时才会用到的开关。" title="高级" />
-
-        <div className="grid gap-3">
-          {LOG_LEVEL_OPTIONS.map((level) => (
-            <RadioRow
-              checked={settings.logLevel === level}
-              isDefault={GENERAL_SETTING_DEFINITIONS.logLevel.defaultValue === level}
-              key={level}
-              label={level.toUpperCase()}
-              name="log-level"
-              onSelect={() => updateSetting('logLevel', level)}
-              value={level}
-            />
-          ))}
-        </div>
-
-        <div className="mt-6 flex items-center justify-between gap-4 border-t pt-4">
-          <div>
-            <span className="block text-sm font-medium">快捷键</span>
-            <span className="mt-1 block text-sm text-muted-foreground">
-              在浏览器里配置打开面板的快捷键。
-            </span>
-          </div>
-          <a
-            className="shrink-0 rounded-md p-2 text-primary transition-colors hover:bg-muted"
-            href="#"
-            onClick={(event) => {
-              event.preventDefault();
-              import('wxt/browser').then(({ browser }) => {
-                browser.tabs.create({ url: 'chrome://extensions/shortcuts' });
-              });
-            }}
-            title="去设置"
-          >
-            <ExternalLink className="size-5" />
-          </a>
-        </div>
-      </section>
-
-      <section className="border-t pt-6">
-        <Button disabled={isSaving} onClick={() => void restoreDefaults()} type="button" variant="outline">
+      <div className="mt-6">
+        <Button
+          disabled={isSaving}
+          onClick={() => void restoreDefaults()}
+          type="button"
+          variant="outline"
+        >
           <RotateCcw />
           {messages.general.restoreDefaults}
         </Button>
-      </section>
+      </div>
     </div>
   );
 }
