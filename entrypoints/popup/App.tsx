@@ -57,10 +57,9 @@ function App() {
         if (!active || !tab?.id) return;
         setActiveTabId(tab.id);
         try {
-          // The content script answers `ping` even on sites the user disabled
-          // through the white/blacklist — but in that case it never mounts the
-          // panel, so `ok:false` must be treated as "not summarizable" rather
-          // than "reachable". Otherwise Summarize posts into the void.
+          // `ping` only answers when the content script is actually loaded on
+          // that tab, so a rejection — or a result without `ok` — means the
+          // page cannot be summarized and Summarize would post into the void.
           const result = await sendExtMessage('ping', undefined, { tabId: tab.id });
           if (active) setIsContentPage(result?.ok === true);
         } catch {

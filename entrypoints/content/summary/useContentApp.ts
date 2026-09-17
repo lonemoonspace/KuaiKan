@@ -11,9 +11,8 @@ import {
 } from '@/lib/model-settings-storage';
 import { loadPromptSettings } from '@/lib/prompt-settings-storage';
 import { loadGeneralSettings } from '@/lib/general-settings-storage';
-import { extractWebpageContent, type WebpageContent } from '@/lib/page-extraction';
+import { parsePageContent, type WebpageContent } from '@/lib/page-extraction';
 import { getCurrentPageSelection } from '@/lib/page-selection';
-import { getSummaryLanguageName } from '@/lib/summary-language';
 import { countInputTokens, truncateByTokens } from '@/lib/token-count';
 import {
   cachePageContent,
@@ -30,7 +29,10 @@ import {
   MODEL_CONFIGS_V2_STORAGE_KEY,
   type ModelConfigItem,
 } from '@/constants/model-settings';
-import type { PromptConfigItem } from '@/constants/prompt-settings';
+import {
+  SUMMARY_LANGUAGE_NAME,
+  type PromptConfigItem,
+} from '@/constants/prompt-settings';
 import type { GeneralSettings } from '@/constants/general-settings';
 import { getUiMessages } from '@/lib/i18n';
 import { sendMessage as sendExtMessage } from '@/lib/messaging';
@@ -235,7 +237,7 @@ export function useContentApp() {
           }
         } else {
           try {
-            const extracted = await extractWebpageContent(
+            const extracted = parsePageContent(
               generalSettings.pageTextExtractMethod,
               document,
             );
@@ -411,7 +413,7 @@ export function useContentApp() {
     const view = {
       textContent,
       articleUrl: pageContent.articleUrl,
-      summaryLanguage: getSummaryLanguageName(settings.summaryLanguage),
+      summaryLanguage: SUMMARY_LANGUAGE_NAME,
       currentSelection: getCurrentPageSelection(),
     };
 

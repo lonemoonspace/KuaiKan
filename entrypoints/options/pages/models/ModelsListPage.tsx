@@ -1,8 +1,9 @@
-import { ArrowDown, ArrowUp, Copy, Edit3, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Copy, Download, Edit3, Plus, Trash2, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Link } from 'react-router';
 import { toast } from 'sonner';
+import { browser } from 'wxt/browser';
 import { Button } from '@/components/ui/button';
 import {
   getModelProviderDefinition,
@@ -11,10 +12,17 @@ import {
 } from '@/constants/model-settings';
 import { getUiMessages } from '@/lib/i18n';
 import {
+  buildModelExportFile,
+  downloadJsonFile,
+  mergeImportedModels,
+  parseModelExportFile,
+} from '@/lib/model-transfer';
+import {
   createModelConfig,
   deleteModelConfig,
   loadModelSettings,
   moveModelConfig,
+  replaceModelSettings,
   setDefaultModelConfig,
   type ModelSettings,
 } from '@/lib/model-settings-storage';
@@ -26,6 +34,7 @@ export function ModelsListPage() {
   const [settings, setSettings] = useState<ModelSettings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busyModelId, setBusyModelId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -55,6 +64,63 @@ export function ModelsListPage() {
 
   async function reloadSettings() {
     setSettings(await loadModelSettings());
+  }
+
+  function handleExport() {
+    if (!settings) return;
+
+    try {
+      const file = buildModelExportFile(
+        settings.models,
+        settings.defaultModelId,
+        browser.runtime.getManifest().version,
+      );
+
+      downloadJsonFile(
+        JSON.stringify(file, null, 2),
+        `kuai-kan-models-${new Date().toISOString().slice(0, 10)}.json`,
+      );
+      toast.success(`已导出 ${file.models.length} 个模型配置（含 API Key）`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '导出失败');
+    }
+  }
+
+  async function handleImportFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    // Cleared first so re-picking the same file still fires onChange.
+    event.currentTarget.value = '';
+
+    if (!file) return;
+
+    try {
+      const parsed = parseModelExportFile(JSON.parse(await file.text()));
+
+      if (!parsed.ok) {
+        toast.error(parsed.error);
+        return;
+      }
+
+      const current = await loadModelSettings();
+      const confirmed = window.confirm(
+        `导入 ${parsed.models.length} 个模型配置，替换当前的 ${current.models.length} 个？此操作无法撤销。`,
+      );
+
+      if (!confirmed) return;
+
+      const merged = mergeImportedModels(current.models, parsed.models);
+      const defaultModelId =
+        parsed.defaultModelId !== null &&
+        merged.some((model) => model.id === parsed.defaultModelId)
+          ? parsed.defaultModelId
+          : merged[0]?.id ?? null;
+
+      await replaceModelSettings({ models: merged, defaultModelId });
+      await reloadSettings();
+      toast.success(`已导入 ${merged.length} 个模型配置`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '导入失败');
+    }
   }
 
   async function runModelAction(
@@ -153,6 +219,33 @@ export function ModelsListPage() {
               </div>
             ) : null;
           })() : null}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            disabled={!settings || settings.models.length === 0}
+            onClick={handleExport}
+            type="button"
+            variant="outline"
+          >
+            <Download />
+            导出
+          </Button>
+          <Button
+            onClick={() => fileInputRef.current?.click()}
+            type="button"
+            variant="outline"
+          >
+            <Upload />
+            导入
+          </Button>
+          <input
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleImportFileChange}
+            ref={fileInputRef}
+            type="file"
+          />
         </div>
       </section>
 
