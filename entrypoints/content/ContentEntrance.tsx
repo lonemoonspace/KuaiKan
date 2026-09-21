@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import RightFloatingBallContainer from '@/components/container/RightFloatingBallContainer';
 import useWxtStorage from '@/hooks/useWxtStorage';
 import { getUiMessages } from '@/lib/i18n';
@@ -85,7 +85,15 @@ export function ContentEntrance() {
     };
   }, []);
 
-  const shadowHost = typeof document !== 'undefined' ? document.querySelector('webpage-summary-entrance') as HTMLElement | null : null;
+  // WXT appends the shadow host before React renders into it (mountUi runs
+  // before onMount), so the lookup result can be cached instead of re-running
+  // on every render. Only a hit is cached: a `null` is retried on the next
+  // render, so a host that appears later is still picked up.
+  const shadowHostRef = useRef<HTMLElement | null>(null);
+  if (!shadowHostRef.current && typeof document !== 'undefined') {
+    shadowHostRef.current = document.querySelector('webpage-summary-entrance') as HTMLElement | null;
+  }
+  const shadowHost = shadowHostRef.current;
   // logger.info('[ContentEntrance] document.querySelector("webpage-summary-entrance"):', shadowHost);
 
   return (

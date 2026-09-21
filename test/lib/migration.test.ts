@@ -143,8 +143,9 @@ describe('runFullMigration (storage key handling)', () => {
       'migration-version': CURRENT_MIGRATION_VERSION,
     });
 
-    const logs = await runFullMigration();
+    const { ok, logs } = await runFullMigration();
 
+    expect(ok).toBe(true);
     expect(logs.some((l) => l.includes('already at the current migration version'))).toBe(true);
     // Storage must be untouched (no rewrite of an already-current install).
     expect(__getMockStorage()).toEqual({

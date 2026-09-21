@@ -397,11 +397,15 @@ export function parsePageContent(
   extractMethod: PageTextExtractMethod = 'readability',
   sourceDocument: Document = document,
 ) {
-  switch (extractMethod) {
-    case 'dom-heuristic':
-      return domHeuristicParseRead(sourceDocument);
-    case 'readability':
-    default:
-      return readabilityParseRead(sourceDocument);
-  }
+  // The two strategies complement each other, so when the chosen one yields
+  // nothing usable the other gets one attempt. The user's setting still
+  // decides which runs first.
+  const primary = extractMethod === 'dom-heuristic' ? domHeuristicParseRead : readabilityParseRead;
+  const fallback = extractMethod === 'dom-heuristic' ? readabilityParseRead : domHeuristicParseRead;
+
+  const primaryResult = primary(sourceDocument);
+  if (primaryResult?.textContent) return primaryResult;
+
+  const fallbackResult = fallback(sourceDocument);
+  return fallbackResult?.textContent ? fallbackResult : primaryResult;
 }

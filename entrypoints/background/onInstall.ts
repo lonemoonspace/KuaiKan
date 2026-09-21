@@ -18,11 +18,13 @@ export function setupOnInstallHook() {
 
 async function handleExtensionUpdate(previousVersion?: string) {
   try {
-    const logs = await runFullMigration();
-    logger.info(
-      `Migration during extension update (from ${previousVersion ?? 'unknown'}) completed:`,
-      logs,
-    );
+    const { ok, logs } = await runFullMigration();
+    const from = previousVersion ?? 'unknown';
+    if (ok) {
+      logger.info(`Migration during extension update (from ${from}) completed:`, logs);
+    } else {
+      logger.error(`Migration during extension update (from ${from}) failed:`, logs);
+    }
   } catch (err) {
     logger.error('Failed to run migration during update:', err);
   }

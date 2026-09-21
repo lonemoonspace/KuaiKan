@@ -23,6 +23,7 @@ import { useContentApp } from './useContentApp';
 import { UsageDisplay } from './UsageDisplay';
 import { ModelSelector } from './ModelSelector';
 import { getUiMessages } from '@/lib/i18n';
+import { getEffectiveInputTokenLimit } from '@/lib/input-token-limit';
 import {
   GENERAL_SETTING_DEFINITIONS,
   type SummaryInputExceedBehaviour,
@@ -109,6 +110,10 @@ export function ContentAppFrame({ onClose, beginSummaryRequest = 0 }: ContentApp
   } = useContentApp();
 
   const isBusy = status === 'streaming' || status === 'submitted';
+  // Same budget the summary is actually truncated to.
+  const effectiveTokenLimit = currentModel
+    ? getEffectiveInputTokenLimit(currentModel)
+    : 0;
 
   // Fire beginSummary exactly once per trigger request. beginSummary is a
   // stable useCallback and the handled-request ref guards against later
@@ -212,8 +217,8 @@ export function ContentAppFrame({ onClose, beginSummaryRequest = 0 }: ContentApp
             <div title={uiMessages.content.viewChangeHint}>
               <span>
                 {pageContentTokenCount !== null
-                  ? (currentModel?.maxInputTokens && currentModel.maxInputTokens > 0 && pageContentTokenCount > currentModel.maxInputTokens)
-                    ? `${uiMessages.content.inputTokensLabel}${formatTokens(currentModel.maxInputTokens)}    |  ${uiMessages.content.totalLabel}${formatTokens(pageContentTokenCount)} `
+                  ? (effectiveTokenLimit > 0 && pageContentTokenCount > effectiveTokenLimit)
+                    ? `${uiMessages.content.inputTokensLabel}${formatTokens(effectiveTokenLimit)}    |  ${uiMessages.content.totalLabel}${formatTokens(pageContentTokenCount)} `
                     : `${uiMessages.content.inputTokensLabel}${formatTokens(pageContentTokenCount)}`
                   : `${uiMessages.content.inputTokensLabel}${uiMessages.content.calculating}`}
               </span>
@@ -283,7 +288,7 @@ export function ContentAppFrame({ onClose, beginSummaryRequest = 0 }: ContentApp
           isOpen={isTokenViewerOpen}
           onClose={() => setIsTokenViewerOpen(false)}
           textContent={pageContent.textContent}
-          maxInputTokens={currentModel?.maxInputTokens ?? 0}
+          maxInputTokens={effectiveTokenLimit}
           behaviour={summaryInputExceedBehaviour}
         />
       )}

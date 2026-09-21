@@ -41,6 +41,10 @@ type ModelEditorProps = {
   submitLabel: string;
 };
 
+// Past this many entries the base-URL preset list starts collapsed. Kept as a
+// named constant so the threshold is not a bare number at the call site.
+const BASE_URL_PRESET_COLLAPSE_THRESHOLD = 8;
+
 // Sentinel for "the current model id is not in the fetched pool". Radix/HTML
 // selects need a value that matches one of the rendered options, so a pooled
 // vs hand-typed state has to be representable.
@@ -205,7 +209,7 @@ export function ModelEditor({
     }
   }
 
-  const shouldCollapseBaseURLPresets = provider.baseURLPresets.length > 8;
+  const shouldCollapseBaseURLPresets = provider.baseURLPresets.length > BASE_URL_PRESET_COLLAPSE_THRESHOLD;
   const areBaseURLPresetsCollapsed =
     shouldCollapseBaseURLPresets && !areBaseURLPresetsExpanded;
 

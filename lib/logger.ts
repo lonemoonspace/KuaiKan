@@ -26,12 +26,18 @@ storage.watch<unknown>(storageKey, (newValue: unknown) => {
   }
 });
 
-// Fetch initial value
-storage.getItem<unknown>(storageKey).then((value: unknown) => {
-  if (isLogLevel(value)) {
-    globalLogLevel = value;
-  }
-});
+// Fetch initial value. A failure only leaves the default level in place; it must
+// not surface as an unhandled rejection from a module everything else imports.
+storage
+  .getItem<unknown>(storageKey)
+  .then((value: unknown) => {
+    if (isLogLevel(value)) {
+      globalLogLevel = value;
+    }
+  })
+  .catch((e: unknown) => {
+    console.warn('[logger] Failed to read the initial log level:', e);
+  });
 
 export class Logger {
   constructor(private scope: string) {}

@@ -1,10 +1,12 @@
-// Minimal in-memory stand-in for `wxt/browser`'s `browser.storage.local`,
-// used only to exercise lib/migration.ts's `runFullMigration()` under
-// vitest/Node without a real extension storage backend.
+// Minimal in-memory stand-in for `wxt/browser`, used to exercise pure modules
+// that talk to extension APIs under vitest/Node without a real extension
+// backend.
 //
-// This intentionally mirrors just the slice of the chrome.storage.local API
-// that runFullMigration() calls: get(null | string | string[]), set(items),
-// remove(keys). Extend it only if a future test needs more.
+// `storage.local` mirrors just the slice of chrome.storage.local that
+// lib/migration.ts's `runFullMigration()` calls: get(null | string | string[]),
+// set(items), remove(keys). `runtime.connect` returns a MockPort so the AI SDK
+// bridge transport can be driven frame by frame. Extend either only when a
+// future test needs more.
 
 type StorageData = Record<string, unknown>;
 
@@ -16,6 +18,73 @@ export function __resetMockStorage(initial: StorageData = {}) {
 
 export function __getMockStorage(): StorageData {
   return { ...store };
+}
+
+/**
+ * Stand-in for a `browser.runtime.Port`: only the surface the transport touches
+ * is implemented (both event objects, `postMessage`, `disconnect`), plus the
+ * test-side helpers `emitMessage` / `emitDisconnect`.
+ *
+ * The listener hooks are arrow-function properties on purpose: a real
+ * `port.onMessage.addListener(fn)` binds `this` to `onMessage`, which would
+ * break instance-field access from a plain method.
+ */
+export class MockPort {
+  readonly posted: unknown[] = [];
+  disconnected = false;
+
+  private readonly messageListeners: Array<(message: unknown) => void> = [];
+  private readonly disconnectListeners: Array<() => void> = [];
+
+  readonly onMessage = {
+    addListener: (listener: (message: unknown) => void) => {
+      this.messageListeners.push(listener);
+    },
+    removeListener: (listener: (message: unknown) => void) => {
+      const index = this.messageListeners.indexOf(listener);
+      if (index >= 0) this.messageListeners.splice(index, 1);
+    },
+  };
+
+  readonly onDisconnect = {
+    addListener: (listener: () => void) => {
+      this.disconnectListeners.push(listener);
+    },
+    removeListener: (listener: () => void) => {
+      const index = this.disconnectListeners.indexOf(listener);
+      if (index >= 0) this.disconnectListeners.splice(index, 1);
+    },
+  };
+
+  postMessage(message: unknown) {
+    this.posted.push(message);
+  }
+
+  disconnect() {
+    this.disconnected = true;
+    this.emitDisconnect();
+  }
+
+  /** Test helper: deliver a background frame to the current listeners. */
+  emitMessage(message: unknown) {
+    for (const listener of [...this.messageListeners]) listener(message);
+  }
+
+  /** Test helper: simulate the other side closing the port. */
+  emitDisconnect() {
+    for (const listener of [...this.disconnectListeners]) listener();
+  }
+
+  get listenerCount(): number {
+    return this.messageListeners.length + this.disconnectListeners.length;
+  }
+}
+
+let portFactory: () => MockPort = () => new MockPort();
+
+/** Point `browser.runtime.connect()` at one port instance for a test. */
+export function __setMockPortFactory(factory: () => MockPort) {
+  portFactory = factory;
 }
 
 export const browser = {
@@ -40,5 +109,8 @@ export const browser = {
         }
       },
     },
+  },
+  runtime: {
+    connect: () => portFactory(),
   },
 };

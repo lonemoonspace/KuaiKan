@@ -65,10 +65,17 @@ function applyTruncationStrategy(
   }
 
   if (behaviour === 'middle') {
-    const headTokens = Math.floor(maxTokens / 2);
+    const marker = '\n\n[... 内容已截断 / content truncated ...]\n\n';
+    // The marker counts against the budget so the result never exceeds it.
+    const budget = Math.max(0, maxTokens - tokenizer.countTokens(marker));
+    const headTokens = Math.floor(budget / 2);
+    const tailTokens = budget - headTokens;
     const head = tokenizer.decode(tokens.slice(0, headTokens));
-    const tail = tokenizer.decode(tokens.slice(tokens.length - (maxTokens - headTokens)));
-    return `${head}\n\n[... 内容已截断 / content truncated ...]\n\n${tail}`;
+    const tail =
+      tailTokens > 0
+        ? tokenizer.decode(tokens.slice(tokens.length - tailTokens))
+        : '';
+    return `${head}${marker}${tail}`;
   }
 
   return tokenizer.decode(tokens.slice(0, maxTokens));

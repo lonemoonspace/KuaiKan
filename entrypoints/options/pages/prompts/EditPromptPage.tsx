@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -67,6 +67,20 @@ export function EditPromptPage() {
     promptId,
   ]);
 
+  // PromptEditor resets its form whenever this reference changes, so it must
+  // stay stable across re-renders (e.g. after a failed save).
+  const initialDraft = useMemo<PromptDraft | null>(
+    () =>
+      prompt
+        ? {
+            name: prompt.name,
+            systemMessage: prompt.systemMessage,
+            userMessage: prompt.userMessage,
+          }
+        : null,
+    [prompt],
+  );
+
   async function handleSubmit(draft: PromptDraft) {
     if (!promptId) return;
 
@@ -103,13 +117,9 @@ export function EditPromptPage() {
         </div>
       ) : null}
 
-      {prompt ? (
+      {initialDraft ? (
         <PromptEditor
-          initialDraft={{
-            name: prompt.name,
-            systemMessage: prompt.systemMessage,
-            userMessage: prompt.userMessage,
-          }}
+          initialDraft={initialDraft}
           isSaving={isSaving}
           onSubmit={handleSubmit}
           submitLabel={messages.common.save}
