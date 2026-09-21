@@ -13,17 +13,13 @@ const logger = createLogger('background:control');
 export function registerControlMessages() {
   onMessage('openOptionPage', async (msg) => {
     logger.debug('[openOptionPage]', msg.data);
-    // Callers pass extension-root-relative paths (e.g. '/options.html#/models');
-    // resolve them against the extension origin so tabs.create always gets an
-    // absolute URL.
-    // Callers pass extension-root-relative options paths
-    // (e.g. '/options.html#/models'); resolve them against the extension
-    // origin so tabs.create always gets an absolute URL.
-    const url: string =
-      typeof msg.data === 'string' && msg.data.startsWith('/')
-        ? browser.runtime.getURL(msg.data as `/options.html${string}`)
-        : msg.data;
-    return void browser.tabs.create({ url });
+    try {
+      await browser.tabs.create({ url: resolveOptionsUrl(msg.data) });
+    } catch (e) {
+      // Logged here because the caller cannot see this: every call site fires
+      // the message and forgets it.
+      logger.error('[openOptionPage] Failed to open the options page', e);
+    }
   });
 
   // Context menus are only built at service-worker startup; rebuild them live
@@ -39,14 +35,24 @@ export function registerControlMessages() {
   );
 }
 
+function isInjectionForbidden(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /cannot access|cannot be scripted|extensions gallery|missing host permission|no tab with id/i.test(
+    message,
+  );
+}
+
 export async function activePageAndInvokeSummary(tab: Browser.tabs.Tab) {
   if (!tab.id) return;
   
   let shadowRootExist = false;
   // Give heavy pages (large DOM / SVG-heavy) more time to mount the shadow
-  // root: up to 2.5s instead of 500ms.
+  // root: ten probes spanning ~2.3s instead of 500ms. Only the retries sleep —
+  // when this is triggered from the context menu the panel is usually already
+  // mounted, so an unconditional first wait would add 250ms of pure latency to
+  // every trigger.
   for (let i = 0; i < 10; i++) {
-    await sleep(250);
+    if (i > 0) await sleep(250);
     try {
       const result = await browser.scripting.executeScript({
         target: { tabId: tab.id },
@@ -60,6 +66,9 @@ export async function activePageAndInvokeSummary(tab: Browser.tabs.Tab) {
       }
     } catch (e) {
       logger.warn('[activePageAndInvokeSummary] script execution failed', e);
+      // Restricted pages (chrome://, the web store, unauthorized sites) reject
+      // every injection identically; retrying only burns ~2s.
+      if (isInjectionForbidden(e)) break;
     }
   }
 
@@ -110,12 +119,28 @@ export function initializeControlHandlers() {
   browser.contextMenus.onClicked.addListener(async (info, tab) => {
     logger.debug('[contextMenu] onClicked, menuItemId:', info.menuItemId);
     if (info.menuItemId === 'summarize-this-page' && tab) {
-      activePageAndInvokeSummary(tab);
+      activePageAndInvokeSummary(tab).catch((e) =>
+        logger.error('[contextMenu] Failed to invoke the summary', e),
+      );
     }
 
     if (info.menuItemId === 'open-setting') {
-      browser.tabs.create({ url: '/options.html#/' });
+      void browser.tabs
+        .create({ url: resolveOptionsUrl('/options.html#/') })
+        .catch((e) => logger.error('[contextMenu] Failed to open the settings page', e));
     }
 
   });
+}
+
+/**
+ * Callers pass extension-root-relative paths (e.g. '/options.html#/models').
+ * Resolve them against the extension origin here so every entry point that
+ * opens a settings page (the `openOptionPage` message and the context menu)
+ * hands `tabs.create` the same absolute URL.
+ */
+function resolveOptionsUrl(target: string): string {
+  return target.startsWith('/')
+    ? browser.runtime.getURL(target as `/options.html${string}`)
+    : target;
 }

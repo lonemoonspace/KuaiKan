@@ -413,7 +413,12 @@ export const MessageBranchPage = ({
   );
 };
 
-export type MessageResponseProps = HTMLAttributes<HTMLDivElement> & {
+// `dangerouslySetInnerHTML` is owned by the component's escaping pipeline;
+// callers must not be able to override it through the spread props.
+export type MessageResponseProps = Omit<
+  HTMLAttributes<HTMLDivElement>,
+  "dangerouslySetInnerHTML"
+> & {
   children: string;
   /** Called when a clicked citation chip's phrase cannot be located in the page. */
   onCitationNotFound?: (phrase: string) => void;
@@ -528,6 +533,10 @@ export const MessageResponse = memo(
       [],
     );
 
+    // Nothing parsed yet and nothing to parse: falling through would emit a
+    // bare `<p></p>` from the fallback branch below.
+    if (!html && !children) return null;
+
     return (
       <div
         className={cn(
@@ -541,7 +550,11 @@ export const MessageResponse = memo(
       />
     );
   },
-  (prevProps, nextProps) => prevProps.children === nextProps.children
+  (prevProps, nextProps) =>
+    prevProps.children === nextProps.children &&
+    // `className` is a stable template literal at the call sites, so comparing
+    // it costs nothing and stops a class-only change from being swallowed.
+    prevProps.className === nextProps.className
 );
 
 MessageResponse.displayName = "MessageResponse";

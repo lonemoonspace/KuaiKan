@@ -3,6 +3,7 @@ import useWxtStorage from '@/hooks/useWxtStorage';
 import type { StorageItemKey } from '#imports';
 
 import { createLogger } from '@/lib/logger';
+import { THEME_STORAGE_KEY } from '@/constants/general-settings';
 
 const logger = createLogger('content:theme-provider');
 
@@ -30,7 +31,7 @@ const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 export function ThemeProvider({
   children,
   defaultTheme = 'system',
-  storageKey = 'local:theme',
+  storageKey = THEME_STORAGE_KEY,
   container,
   ...props
 }: ThemeProviderProps) {

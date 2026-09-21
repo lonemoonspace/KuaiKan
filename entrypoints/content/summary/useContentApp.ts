@@ -14,6 +14,7 @@ import { loadGeneralSettings } from '@/lib/general-settings-storage';
 import { parsePageContent, type WebpageContent } from '@/lib/page-extraction';
 import { getCurrentPageSelection } from '@/lib/page-selection';
 import { countInputTokens, truncateByTokens } from '@/lib/token-count';
+import { getEffectiveInputTokenLimit } from '@/lib/input-token-limit';
 import {
   cachePageContent,
   cachePageContentTokenCount,
@@ -74,6 +75,10 @@ export function useContentApp() {
 
   const settingsLoadedRef = useRef(false);
 
+  // URL the current `pageContent` was extracted for. A single-page app can
+  // navigate under the open panel, at which point that content is stale.
+  const pageHrefRef = useRef<string | null>(null);
+
   // The summarize callback is intentionally stable (ContentAppFrame's trigger
   // effect fires once per request). All data it needs is read from this
   // always-current ref instead of the render closure, so a stale closure can
@@ -105,6 +110,9 @@ export function useContentApp() {
   const { error, messages, sendMessage, setMessages, status, stop } = useChat({
     transport,
   });
+
+  const statusRef = useRef(status);
+  statusRef.current = status;
 
   const currentModel = useMemo(
     () => models.find((m) => m.id === currentModelId),
@@ -222,6 +230,7 @@ export function useContentApp() {
 
         if (cached) {
           markTiming('面板：命中正文缓存（含 innerText 校验）');
+          pageHrefRef.current = window.location.href;
           setPageContent(cached.content);
           if (cached.tokenCount !== null) {
             setPageContentTokenCount(cached.tokenCount);
@@ -246,6 +255,7 @@ export function useContentApp() {
             if (extracted) {
               cachePageContent(window.location.href, extracted);
               markTiming('面板：写入正文缓存（innerText 签名）完成');
+              pageHrefRef.current = window.location.href;
               setPageContent(extracted);
               countInputTokens(extracted.textContent)
                 .then((count) => {
@@ -306,6 +316,52 @@ export function useContentApp() {
     };
   }, []);
 
+  // Re-extract the body when the page navigated (SPA route change) since the
+  // last extraction. Returns the content to summarize; falls back to the
+  // previous content if the new route yielded nothing.
+  const refreshPageContentIfStale = useCallback(
+    async (
+      current: WebpageContent | null,
+      generalSettings: GeneralSettings,
+    ): Promise<WebpageContent | null> => {
+      const href = window.location.href;
+      if (pageHrefRef.current === href) return current;
+
+      const cached = getCachedPageContent(href);
+      let fresh: WebpageContent | null = cached?.content ?? null;
+      if (!fresh) {
+        try {
+          fresh =
+            parsePageContent(generalSettings.pageTextExtractMethod, document) ??
+            null;
+        } catch (e) {
+          logger.error('[useContentApp] Failed to re-extract page content', e);
+        }
+        if (fresh) cachePageContent(href, fresh);
+      }
+
+      // The href stays stale on failure so the next attempt retries.
+      if (!fresh) return current;
+
+      pageHrefRef.current = href;
+      setPageContent(fresh);
+      if (cached && cached.tokenCount !== null) {
+        setPageContentTokenCount(cached.tokenCount);
+      } else {
+        setPageContentTokenCount(null);
+        countInputTokens(fresh.textContent)
+          .then((count) => {
+            if (pageHrefRef.current !== href) return;
+            setPageContentTokenCount(count);
+            cachePageContentTokenCount(href, count);
+          })
+          .catch((e) => logger.error('Failed to count tokens', e));
+      }
+      return fresh;
+    },
+    [],
+  );
+
   // External triggers are routed through the extension message listener in
   // ContentEntrance rather than a page-visible DOM event. useCallback keeps
   // the reference stable so ContentAppFrame's trigger effect fires once per
@@ -338,10 +394,22 @@ export function useContentApp() {
     }
   }, []);
 
-  const handleSummarize = useCallback(async () => {
-    if (status === 'streaming' || status === 'submitted') {
+  // `restartIfBusy` distinguishes an external trigger (context menu, popup,
+  // auto-summarize), which means "summarize now", from the panel button, which
+  // toggles: pressing it mid-stream only stops.
+  const summarize = useCallback(async (restartIfBusy: boolean) => {
+    const isBusy = () =>
+      statusRef.current === 'streaming' || statusRef.current === 'submitted';
+
+    if (isBusy()) {
       stop();
-      return;
+      if (!restartIfBusy) return;
+
+      // Let the aborted stream settle before starting the next one.
+      for (let waited = 0; isBusy() && waited < 2000; waited += 50) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      if (isBusy()) return;
     }
 
     beginSummaryTiming();
@@ -350,10 +418,10 @@ export function useContentApp() {
       currentModel,
       currentModelId,
       currentPromptId,
-      pageContent,
       prompts,
       settings,
     } = summarizeContextRef.current;
+    let pageContent = summarizeContextRef.current.pageContent;
 
     // Every bail-out below used to be a silent log, which made the button look
     // broken. Tell the user what is missing, and where to fix it.
@@ -382,6 +450,10 @@ export function useContentApp() {
       return;
     }
 
+    if (settings) {
+      pageContent = await refreshPageContentIfStale(pageContent, settings);
+    }
+
     if (!pageContent || !settings) {
       logger.warn('[useContentApp] Missing page content or settings');
       toast.error(messagesI18n.content.noPageContent);
@@ -390,23 +462,23 @@ export function useContentApp() {
 
     let textContent = pageContent.textContent;
 
-    if (currentModel && currentModel.maxInputTokens > 0) {
-      const isOpenAiLike =
-        currentModel.providerId === 'openai' ||
-        currentModel.providerId === 'open-responses' ||
-        currentModel.providerId === 'openai-compatible';
-      // GPT tokenization is only exact for OpenAI-compatible providers. For
-      // Anthropic, Gemini, Ollama, etc. leave headroom so gpt-5 estimates do
-      // not push the provider over its real context limit.
-      const tokenLimit = isOpenAiLike
-        ? currentModel.maxInputTokens
-        : Math.floor(currentModel.maxInputTokens * 0.9);
+    const tokenLimit = currentModel
+      ? getEffectiveInputTokenLimit(currentModel)
+      : 0;
+    if (tokenLimit > 0) {
       markTiming('总结：截断 RPC 开始');
-      textContent = await truncateByTokens(
-        textContent,
-        tokenLimit,
-        settings.summaryInputExceedBehaviour,
-      );
+      try {
+        textContent = await truncateByTokens(
+          textContent,
+          tokenLimit,
+          settings.summaryInputExceedBehaviour,
+        );
+      } catch (e) {
+        // Truncation only keeps us under the context limit; if the background
+        // worker is unreachable, send the full text and let the provider
+        // decide rather than failing without any feedback.
+        logger.warn('[useContentApp] Truncation failed; sending the full text', e);
+      }
       markTiming('总结：截断 RPC 完成');
     }
 
@@ -432,7 +504,9 @@ export function useContentApp() {
     // this callback can stay stable for ContentAppFrame's trigger effect.
     // `messagesI18n` is a module-level constant per locale, so listing it does
     // not destabilize the callback.
-  }, [status, stop, sendMessage, setMessages, messagesI18n]);
+  }, [stop, sendMessage, setMessages, messagesI18n, refreshPageContentIfStale]);
+
+  const handleSummarize = useCallback(() => summarize(false), [summarize]);
 
   // Handle auto summarization once data is fully loaded
   useEffect(() => {
@@ -473,17 +547,15 @@ export function useContentApp() {
 
     if (pageContent) {
       setAutoSummarizePending(false);
-      void handleSummarize();
+      void summarize(true);
     }
-    // `handleSummarize` and `messagesI18n` are deliberately left out of this
-    // dependency array. `handleSummarize` gets a new identity on every
-    // `status` change (see its own deps a few lines up), and `setAutoSummarizePending(false)`
-    // above doesn't commit synchronously — so if `handleSummarize` were listed
-    // here, a `status` flip while this effect's state update is still in
-    // flight could re-run the effect before `autoSummarizePending` reads back
-    // as false, firing `handleSummarize()` again (duplicate/looping summary
-    // triggers). `messagesI18n` is only read inside the early-return branches
-    // above and reassigning it can't affect whether those branches run, so it
+    // `summarize` and `messagesI18n` are deliberately left out of this
+    // dependency array. `setAutoSummarizePending(false)` above doesn't commit
+    // synchronously — so if `summarize` were listed here and its identity ever
+    // changed while this effect's state update is still in flight, the effect
+    // could re-run before `autoSummarizePending` reads back as false, firing
+    // `summarize()` again (duplicate/looping summary triggers). `messagesI18n`
+    // is only read inside the early-return branches above and reassigning it can't affect whether those branches run, so it
     // adds nothing but re-run churn. See 1.5.1's stale-closure bug
     // (`summarizeContextRef` below) for why this effect's dependencies get
     // this much scrutiny — do not "fix" this by adding either back.

@@ -86,6 +86,18 @@ const logger = createLogger('background:cors-fix');
  */
 const CORS_FIX_RULE_ID = 1001;
 
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => [k, sortKeys(v)]),
+    );
+  }
+  return value;
+}
+
 /**
  * Registers a declarativeNetRequest rule that injects CORS response headers into
  * all API responses received by this extension's background service worker.
@@ -105,7 +117,7 @@ export async function setupCorsFixRule() {
   // compares against Access-Control-Allow-Origin in the response.
   const extensionOrigin = `chrome-extension://${extensionId}`;
 
-  const rule:Browser.declarativeNetRequest.Rule = {
+  const rule: Browser.declarativeNetRequest.Rule = {
     id: CORS_FIX_RULE_ID,
     priority: 1,
     action: {
@@ -162,6 +174,14 @@ export async function setupCorsFixRule() {
     // leaving duplicate or outdated rules in the dynamic ruleset.
     const existingRules = await browser.declarativeNetRequest.getDynamicRules();
     const existingIds = existingRules.map((r) => r.id);
+
+    // Service workers restart often; skip the write when the installed rule
+    // already matches. Compared as JSON because the browser may reorder keys.
+    const installed = existingRules.find((r) => r.id === CORS_FIX_RULE_ID);
+    if (installed && JSON.stringify(sortKeys(installed)) === JSON.stringify(sortKeys(rule))) {
+      logger.debug('[cors-fix] Rule already up to date; skipping registration');
+      return;
+    }
 
     await browser.declarativeNetRequest.updateDynamicRules({
       removeRuleIds: existingIds.includes(CORS_FIX_RULE_ID) ? [CORS_FIX_RULE_ID] : [],

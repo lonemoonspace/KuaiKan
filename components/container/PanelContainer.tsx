@@ -10,6 +10,20 @@ interface PanelContainerProps {
 
 type FloatingState = { width: number; height: number; left: string; top: string; right: string; bottom: string };
 
+const MIN_VISIBLE_HEADER = 50;
+
+function isHeaderReachable(el: HTMLElement): boolean {
+  const rect = el.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth;
+  const viewportHeight = document.documentElement.clientHeight;
+  return (
+    rect.top >= 0 &&
+    rect.top + MIN_VISIBLE_HEADER <= viewportHeight &&
+    rect.left + MIN_VISIBLE_HEADER <= viewportWidth &&
+    rect.right >= MIN_VISIBLE_HEADER
+  );
+}
+
 function UnifiedPanelRenderer({ children, storageKey }: { children: React.ReactNode, storageKey?: string | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -52,6 +66,16 @@ function UnifiedPanelRenderer({ children, storageKey }: { children: React.ReactN
       el.style.top = floatingState.top || '';
       el.style.right = floatingState.right || '';
       el.style.bottom = floatingState.bottom || '';
+
+      // A position saved on another monitor / window size can land the panel
+      // outside the viewport with no handle to drag it back. If the header is
+      // not reachable, fall back to the default anchor (keeping the size).
+      if (!isHeaderReachable(el)) {
+        el.style.left = '';
+        el.style.top = '4em';
+        el.style.right = '4em';
+        el.style.bottom = '';
+      }
     } else {
       el.style.width = '30em';
       el.style.height = '36em';

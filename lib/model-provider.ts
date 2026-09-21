@@ -88,6 +88,10 @@ function createFetchWithExtraBody(
   return (input: RequestInfo | URL, init?: RequestInit) => {
     const body = init?.body;
 
+    // Only JSON string bodies are inspected. The AI SDK serializes request
+    // bodies to strings, so anything else (Blob / ArrayBuffer / FormData /
+    // ReadableStream) passes through untouched and the extraBody overrides are
+    // intentionally not merged into it.
     if (typeof body !== 'string') {
       return fetch(input, init);
     }

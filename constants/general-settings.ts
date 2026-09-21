@@ -78,6 +78,11 @@ function summaryInputExceedBehaviourSetting(
   };
 }
 
+// Theme is a per-device UI preference shared by every entry point. It lives
+// outside GENERAL_SETTING_DEFINITIONS on purpose so "restore defaults" does not
+// flip the appearance, but the key is defined here like every other one.
+export const THEME_STORAGE_KEY: StorageItemKey = 'local:theme';
+
 export const GENERAL_SETTING_DEFINITIONS = {
   pageTextExtractMethod: pageTextExtractMethodSetting(
     'local:page-text-extract-method',

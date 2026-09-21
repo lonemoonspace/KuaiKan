@@ -1,4 +1,20 @@
 # Changelog
+## [3.0.1]
+1. fix: 提示词编辑页保存失败后不再把已编辑内容重置回原值（`initialDraft` 引用稳定化）
+2. fix: 单页应用（SPA）路由切换后，点击总结前会重新提取当前页面正文并刷新 token 计数，不再拿上一篇文章去总结
+3. fix: 面板恢复持久化位置时若标题栏已在视口外（换屏 / 缩窗），回落到默认位置，避免面板永久丢失
+4. fix: 首选提取方式（Readability / DOM 启发式）没有得到正文时，自动尝试另一种方式；设置项本身不变
+5. fix: 右键菜单 / popup / 自动总结触发时，若上一次总结仍在流式输出，会先停止再重新总结；面板按钮保持「停止」的切换语义
+6. fix: 截断 RPC 失败时降级为发送原文并记 warn 日志，不再无声失败
+7. fix: 顶栏「超限」提示与实际截断共用同一阈值（`lib/input-token-limit.ts`，非 OpenAI 类模型含 0.9 系数）
+8. fix: 「中间截断」的分隔符计入 token 预算，结果不再超出上限
+9. fix: 右键菜单触发总结补上 `.catch`；对 chrome:// 等受限页面不再白等约 2.3 秒的重试
+10. fix: 设置页 GitHub 链接改指 `lonemoonspace/KuaiKan`
+11. change: 正文缓存最多保留 20 条（LRU），删除无用的 `timestamp` 字段
+12. change: CORS 规则与已安装规则一致时跳过 DNR 重写
+13. change: `runFullMigration` 返回 `{ ok, logs }`，迁移失败时 `onInstall` 以 error 级别记录
+14. chore: 主题存储键提为常量 `THEME_STORAGE_KEY`；`MessageResponseProps` 排除 `dangerouslySetInnerHTML`；日志初始化、未知桥接帧等处补日志与注释；新增缓存淘汰、阈值函数的测试
+
 ## [3.0.0]
 1. remove: 移除「站点定制」整页，包括站点黑白名单与自定义提取规则。`SiteCustomizationPage`、`lib/site-rules-storage.ts`、`constants/site-rules.ts` 及其测试一并删除；content script 不再按 URL 决定是否注入，正文提取只走通用方式（Readability / DOM 启发式）
 2. remove: 移除提示词页的「总结语言」设置与 `lib/summary-language.ts`。三个内置预设改为直接写「简体中文」（同时删掉「输出语言不是中文时把小标题译成该语言」的说明）；`{{summaryLanguage}}` 变量保留、值恒为「简体中文」，已保存的自定义提示词不会失效。内置预设只对新播种生效，已有的三条预设需要删除后重新播种才会更新

@@ -6,6 +6,9 @@ import {
   type AiSdkConnectBridgeServerMessage,
 } from '@/lib/ai-sdk-connect-bridge';
 import { markTiming, mergeBackgroundTiming } from '@/lib/summary-timing';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('content:ai-sdk-transport');
 
 type AiSdkConnectTransportOptions = {
   getModelConfigId?: () => string | null;
@@ -124,7 +127,13 @@ export class AiSdkConnectTransport implements ChatTransport<UIMessage> {
               status: frame.status,
               retryable: frame.retryable,
             });
+            return;
           }
+
+          // A frame type this build does not know about (background and content
+          // script from different versions, or a frame added later) would
+          // otherwise be dropped without a trace and be undebuggable from here.
+          logger.warn('[AiSdkConnectTransport] Ignoring unknown bridge frame:', frame);
         };
 
         const onDisconnect = () => {

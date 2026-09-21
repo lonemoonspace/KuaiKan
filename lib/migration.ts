@@ -167,9 +167,12 @@ const OBSOLETE_RAW_KEYS = [
   'local:content-samples-position',
 ];
 
-export async function runFullMigration(): Promise<string[]> {
+export type MigrationResult = { ok: boolean; logs: string[] };
+
+export async function runFullMigration(): Promise<MigrationResult> {
   const { browser } = await import('wxt/browser');
   const logs: string[] = [];
+  let ok = true;
 
   try {
     const data = await browser.storage.local.get(null);
@@ -177,7 +180,7 @@ export async function runFullMigration(): Promise<string[]> {
 
     if (data[MIGRATION_VERSION_RAW_KEY] === CURRENT_MIGRATION_VERSION) {
       logs.push('Storage is already at the current migration version, skipping.');
-      return logs;
+      return { ok, logs };
     }
 
     const keysToSet: Record<string, unknown> = {};
@@ -247,9 +250,10 @@ export async function runFullMigration(): Promise<string[]> {
     await browser.storage.local.set(keysToSet);
     logs.push(`Saved migrated keys: ${Object.keys(keysToSet).join(', ')}`);
   } catch (error) {
+    ok = false;
     logs.push(`Migration error: ${String(error)}`);
     logger.error('Migration error:', error);
   }
 
-  return logs;
+  return { ok, logs };
 }

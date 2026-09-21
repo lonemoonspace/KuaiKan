@@ -50,7 +50,7 @@ export function OptionsLayout() {
         </div>
         <div className="grow" />
         <div className="flex items-center gap-2">
-          <a aria-label="GitHub" className="grid size-9 place-items-center rounded-lg border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" href="https://github.com/ctxinf/webpage-summary" rel="noreferrer noopener" target="_blank" title="GitHub"><GithubIcon size={18} /></a>
+          <a aria-label="GitHub" className="grid size-9 place-items-center rounded-lg border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" href="https://github.com/lonemoonspace/KuaiKan" rel="noreferrer noopener" target="_blank" title="GitHub"><GithubIcon size={18} /></a>
         </div>
       </header>
 
