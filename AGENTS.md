@@ -84,7 +84,7 @@
 ### 普通消息（控制面）
 基于 `@webext-core/messaging`，用于短 RPC 和控制事件。协议文件：`lib/messaging.ts`（`ProtocolMap` 是唯一权威定义）。
 
-当前消息：`openOptionPage`（content→background）、`invokeSummary`（background→content 打开/触发总结）、`seedPromptLibrary`（各上下文→background，后台单飞执行播种，避免并发重复初始化）、`ping` / `extractText`（popup→content）、token 计数与裁剪 RPC（`countInputTokens*` / `truncateByTokens*` / `splitTokensWithTiming`）。
+当前消息：`openOptionPage`（content→background）、`loadPanelSnapshot` / `savePanelSnapshot`（content→background，按发送方标签页读写面板快照）、`invokeSummary`（background→content 打开/触发总结）、`seedPromptLibrary`（各上下文→background，后台单飞执行播种，避免并发重复初始化）、`ping` / `extractText`（popup→content）、token 计数与裁剪 RPC（`countInputTokens*` / `truncateByTokens*` / `splitTokensWithTiming`）。
 
 ### Connect Bridge（LLM 流式通道）
 正式接口：`lib/ai-sdk-connect-bridge.ts` + `lib/ai-sdk-connect-transport.ts`
@@ -124,6 +124,12 @@ ServerFrame:  { type: 'chunk'; chunk: UIMessageChunk } | { type: 'error'; messag
 | `local:migration-version` | `number` | 迁移幂等标记（`lib/migration.ts`） |
 
 动态键：`local:<storageKey>-floating-state`（`PanelContainer`）、`local:right-floating-ball-top-<key>`（`RightFloatingBallContainer`）。
+
+面板快照：`session:panel-snapshots-<tabId>`（`browser.storage.session`，仅内存、重启浏览器即清空），
+`Record<pageKey, { open, messages, updatedAt }>`，每个标签页最多 20 个页面（LRU），标签页关闭时由后台删除。
+`pageKey` 是去掉页内锚点的 URL（`#/`、`#!` 开头的 hash 路由保留），见 `lib/panel-snapshot.ts`。
+content script 读不到 `storage.session` 也不知道自己的 tabId，所以一律经后台 RPC 读写；只存 assistant 消息，
+不存带整页正文的 system/user 消息。
 
 ---
 

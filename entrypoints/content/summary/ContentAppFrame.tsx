@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import type { UIMessage } from 'ai';
 import { browser } from 'wxt/browser';
 import useWxtStorage from '@/hooks/useWxtStorage';
 import { sendMessage as sendExtMessage } from '@/lib/messaging';
@@ -77,9 +78,20 @@ function ReasoningBlock({ text, streaming }: { text: string; streaming: boolean 
 interface ContentAppFrameProps {
   onClose: () => void;
   beginSummaryRequest?: number;
+  onBeginSummaryHandled?: () => void;
+  /** The summary this page showed last time, restored into the chat. */
+  initialMessages?: UIMessage[];
+  /** Called with the summary as it changes, so it can be restored later. */
+  onPersistMessages?: (messages: UIMessage[]) => void;
 }
 
-export function ContentAppFrame({ onClose, beginSummaryRequest = 0 }: ContentAppFrameProps) {
+export function ContentAppFrame({
+  onClose,
+  beginSummaryRequest = 0,
+  onBeginSummaryHandled,
+  initialMessages,
+  onPersistMessages,
+}: ContentAppFrameProps) {
   const uiMessages = getUiMessages();
   const [isTokenViewerOpen, setIsTokenViewerOpen] = useState(false);
   const [enableTokenUsageView] = useWxtStorage<boolean>(
@@ -107,7 +119,7 @@ export function ContentAppFrame({ onClose, beginSummaryRequest = 0 }: ContentApp
     handleSummarize,
     beginSummary,
     handleModelIdChange,
-  } = useContentApp();
+  } = useContentApp({ initialMessages, onPersistMessages });
 
   const isBusy = status === 'streaming' || status === 'submitted';
   // Same budget the summary is actually truncated to.
@@ -127,8 +139,9 @@ export function ContentAppFrame({ onClose, beginSummaryRequest = 0 }: ContentApp
     ) {
       handledSummaryRequestRef.current = beginSummaryRequest;
       beginSummary();
+      onBeginSummaryHandled?.();
     }
-  }, [beginSummaryRequest, beginSummary]);
+  }, [beginSummaryRequest, beginSummary, onBeginSummaryHandled]);
 
 
   return (
