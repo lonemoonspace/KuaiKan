@@ -44,6 +44,11 @@ const UI_MESSAGES = {
     tokenPreview: 'Token 预览',
     hideFloatingBall: '隐藏悬浮球',
     citationNotFound: '没有在页面中找到这段原文，可能被改写过或内容尚未加载。',
+    summarizeThisPage: '总结此页',
+    stop: '停止',
+    copySummary: '复制',
+    copied: '已复制',
+    copyFailed: '复制失败，请手动选择文本复制。',
   },
   general: {
     loadFailed: '通用设置加载失败。',

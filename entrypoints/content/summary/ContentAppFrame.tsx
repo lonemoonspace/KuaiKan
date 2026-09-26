@@ -1,15 +1,19 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { UIMessage } from 'ai';
 import { browser } from 'wxt/browser';
 import useWxtStorage from '@/hooks/useWxtStorage';
 import { sendMessage as sendExtMessage } from '@/lib/messaging';
 import {
-  Settings,
-  ScanEye,
-  X,
-  RefreshCw,
-  Info,
+  Check,
   ChevronRight,
+  Copy,
+  Info,
+  RefreshCw,
+  ScanEye,
+  Settings,
+  Sparkles,
+  Square,
+  X,
 } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 
@@ -17,7 +21,9 @@ import {
   Message,
   MessageContent,
   MessageResponse,
+  citationMarkersToQuotes,
 } from '@/components/ai-elements/message';
+import { copyText } from '@/lib/clipboard';
 
 import { TokenViewerModal } from '@/components/TokenViewerModal';
 import { useContentApp } from './useContentApp';
@@ -27,8 +33,47 @@ import { getUiMessages } from '@/lib/i18n';
 import { getEffectiveInputTokenLimit } from '@/lib/input-token-limit';
 import {
   GENERAL_SETTING_DEFINITIONS,
+  PANEL_FONT_SIZE_REM_PX,
+  type PanelFontSize,
   type SummaryInputExceedBehaviour,
 } from '@/constants/general-settings';
+
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('content:ContentAppFrame');
+
+/** Copy button for the finished summary; flips to a check mark briefly. */
+function CopySummaryButton({ text }: { text: string }) {
+  const uiMessages = getUiMessages();
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  const handleCopy = async () => {
+    try {
+      await copyText(text);
+      setCopied(true);
+    } catch (e) {
+      logger.warn('[ContentAppFrame] Copy failed', e);
+      toast.error(uiMessages.content.copyFailed);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={handleCopy}
+    >
+      {copied ? <Check size={14} /> : <Copy size={14} />}
+      <span>{copied ? uiMessages.content.copied : uiMessages.content.copySummary}</span>
+    </button>
+  );
+}
 
 const formatTokens = (val: number) => {
   if (val >= 10000) {
@@ -107,6 +152,15 @@ export function ContentAppFrame({
     GENERAL_SETTING_DEFINITIONS.summaryInputExceedBehaviour.storageKey,
     GENERAL_SETTING_DEFINITIONS.summaryInputExceedBehaviour.defaultValue as SummaryInputExceedBehaviour
   );
+  const [panelFontSize] = useWxtStorage<PanelFontSize>(
+    GENERAL_SETTING_DEFINITIONS.panelFontSize.storageKey,
+    GENERAL_SETTING_DEFINITIONS.panelFontSize.defaultValue as PanelFontSize
+  );
+  // Only the reading area follows the font-size setting; the header and the
+  // status bar keep their size. Unknown stored values fall back to medium.
+  const readingStyle = {
+    '--webpage-summary-panel-srem': `${PANEL_FONT_SIZE_REM_PX[panelFontSize] ?? PANEL_FONT_SIZE_REM_PX.medium}px`,
+  } as CSSProperties;
 
   const {
     messages,
@@ -125,6 +179,21 @@ export function ContentAppFrame({
   } = useContentApp({ initialMessages, onPersistMessages });
 
   const isBusy = status === 'streaming' || status === 'submitted';
+  const assistantMessages = useMemo(
+    () => messages.filter((message) => message.role === 'assistant'),
+    [messages],
+  );
+  const hasSummary = assistantMessages.length > 0;
+  // Markdown of the latest summary, citation markers turned into quotes.
+  const latestSummaryText = useMemo(() => {
+    const latest = assistantMessages[assistantMessages.length - 1];
+    if (!latest) return '';
+    const text = latest.parts
+      .map((part) => (part.type === 'text' ? part.text : ''))
+      .filter(Boolean)
+      .join('\n\n');
+    return citationMarkersToQuotes(text).trim();
+  }, [assistantMessages]);
   // Same budget the summary is actually truncated to.
   const effectiveTokenLimit = currentModel
     ? getEffectiveInputTokenLimit(currentModel)
@@ -171,11 +240,17 @@ export function ContentAppFrame({
           <button
             className="flex items-center gap-0.5 px-1 bg-background border border-border rounded-lg text-xs hover:border-foreground/40 shadow-sm text-foreground shrink-0 transition-colors"
             onClick={handleSummarize}
-            title={messages.length > 0 ? uiMessages.content.reSummarize : uiMessages.content.summary}
+            title={
+              isBusy
+                ? uiMessages.content.stop
+                : hasSummary
+                  ? uiMessages.content.reSummarize
+                  : uiMessages.content.summary
+            }
           >
             {isBusy ? (
-              <RefreshCw size={16} strokeWidth={1.5} className="animate-spin" />
-            ) : messages.length > 0 ? (
+              <Square size={14} strokeWidth={0} fill="currentColor" className="m-px" />
+            ) : hasSummary ? (
               <RefreshCw size={16} strokeWidth={1.5} />
             ) : (
               <img
@@ -185,7 +260,7 @@ export function ContentAppFrame({
                 draggable={false}
               />
             )}
-            {messages.length === 0 && !isBusy ? (
+            {!hasSummary && !isBusy ? (
               <span className="font-medium pr-0.5 pl-0.5 inline-block translate-y-px opacity-80">{uiMessages.content.summary}</span>
             ) : null}
           </button>
@@ -226,9 +301,28 @@ export function ContentAppFrame({
         </div>
       </header>
 
-      <div className="kuai-scroll relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden" role="log">
-        <div className="flex flex-col gap-6 px-5 pt-4 pb-6">
-          {messages.filter((message) => message.role === 'assistant').map((message) => {
+      <div
+        className="kuai-reading kuai-scroll relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+        role="log"
+        style={readingStyle}
+      >
+        <div className="flex min-h-full flex-col gap-6 px-5 pt-4 pb-6">
+          {!hasSummary && !isBusy && (
+            <div className="flex flex-1 flex-col items-center justify-center gap-4 py-8 text-center">
+              <div className="kuai-empty-title">
+                {pageContent?.title || document.title || uiMessages.content.untitledPage}
+              </div>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                onClick={handleSummarize}
+              >
+                <Sparkles size={15} />
+                {uiMessages.content.summarizeThisPage}
+              </button>
+            </div>
+          )}
+          {assistantMessages.map((message) => {
             return (
               <Message from={message.role} key={message.id} className="kuai-message-enter">
                 <MessageContent className="w-full">
@@ -258,6 +352,11 @@ export function ContentAppFrame({
               </Message>
             );
           })}
+          {hasSummary && !isBusy && latestSummaryText && (
+            <div className="-mt-3 -ml-2 flex">
+              <CopySummaryButton text={latestSummaryText} />
+            </div>
+          )}
           {status === 'submitted' && (
             <div className="flex items-center gap-2 text-muted-foreground">
               <div className="size-4 animate-spin rounded-full border-2 border-border border-t-foreground" />

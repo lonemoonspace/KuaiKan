@@ -131,6 +131,17 @@ export function extractCitationPhrases(source: string): { text: string; phrases:
   return { phrases, text };
 }
 
+/**
+ * Plain-text form of a summary for copying: citation markers become the
+ * quoted phrase they point at, the same way the chip reads in the panel.
+ */
+export function citationMarkersToQuotes(source: string): string {
+  return source.replace(CITATION_PATTERN, (_match, raw: string) => {
+    const phrase = String(raw).replace(/\s+/g, ' ').trim();
+    return phrase ? `“${phrase}”` : '';
+  });
+}
+
 export function buildCitationChips(html: string, phrases: string[]): string {
   return html.replace(CITATION_PLACEHOLDER_PATTERN, (_match, rawIndex: string) => {
     const phrase = phrases[Number(rawIndex)];
