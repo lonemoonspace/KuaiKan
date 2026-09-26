@@ -34,6 +34,11 @@ export default defineConfig({
       ],
     },
     plugins: [visualizer({ filename: 'stats.html', open: false })],
+    build: {
+      // Chrome 不采用扩展页里的 modulepreload（报 cross-world extension resource mismatch），
+      // 资源都读本地磁盘，预加载本来也没收益
+      modulePreload: false,
+    },
     // esbuild: {
     //   charset: 'ascii',
     // },
