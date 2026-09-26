@@ -17,22 +17,28 @@
     --webpage-summary-panel-srem: 16px;
     --radius: calc(0.5 * var(--webpage-summary-panel-srem));
 
-    /*
-     * Type scale — four steps only:
-     *   aux 12px (status bar, captions) · ui 13px (controls)
-     *   body 15px (summary text) · heading 17px
-     */
-    --kuai-text-aux: calc(0.75 * var(--webpage-summary-panel-srem));
-    --kuai-text-ui: calc(0.8125 * var(--webpage-summary-panel-srem));
-    --kuai-text-body: calc(0.9375 * var(--webpage-summary-panel-srem));
-    --kuai-text-heading: calc(1.0625 * var(--webpage-summary-panel-srem));
-
     color: hsl(var(--foreground));
     font-family: var(--font-sans);
     font-size: var(--kuai-text-ui);
     line-height: 1.45;
     letter-spacing: 0;
     -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+   * Type scale — four steps only (at the default 16px unit):
+   *   aux 12px (status bar, captions) · ui 13px (controls)
+   *   body 15px (summary text) · heading 17px
+   * Declared again on `.kuai-reading` because a custom property's var() is
+   * resolved where it is declared: the reading area overrides the unit for
+   * the panel font-size setting, and the steps must follow it there.
+   */
+  :host,
+  .kuai-reading {
+    --kuai-text-aux: calc(0.75 * var(--webpage-summary-panel-srem));
+    --kuai-text-ui: calc(0.8125 * var(--webpage-summary-panel-srem));
+    --kuai-text-body: calc(0.9375 * var(--webpage-summary-panel-srem));
+    --kuai-text-heading: calc(1.0625 * var(--webpage-summary-panel-srem));
   }
 
   button {
@@ -64,6 +70,19 @@
   color: hsl(var(--muted-foreground));
   border-top: 1px solid hsl(var(--border));
   background: hsl(var(--card));
+}
+
+.kuai-reading {
+  font-size: var(--kuai-text-ui);
+}
+
+.kuai-empty-title {
+  max-width: 28em;
+  color: hsl(var(--foreground));
+  font-size: var(--kuai-text-body);
+  font-weight: 600;
+  line-height: 1.5;
+  text-wrap: balance;
 }
 
 .kuai-scroll {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCitationChips,
+  citationMarkersToQuotes,
   extractCitationPhrases,
   getHeadingTone,
 } from '@/components/ai-elements/message';
@@ -122,5 +123,17 @@ describe('getHeadingTone', () => {
   it('leaves ordinary headings untoned', () => {
     expect(getHeadingTone('关键要点')).toBeNull();
     expect(getHeadingTone('详细内容')).toBeNull();
+  });
+});
+
+describe('citationMarkersToQuotes', () => {
+  it('turns both marker prefixes into the quoted phrase', () => {
+    expect(citationMarkersToQuotes('要点 ⟦cite:原文 短句⟧。另一点 ⟦引用:第二句⟧')).toBe(
+      '要点 “原文 短句”。另一点 “第二句”',
+    );
+  });
+
+  it('collapses whitespace inside the phrase and leaves other text alone', () => {
+    expect(citationMarkersToQuotes('## 标题\n- a ⟦cite:  x\n  y ⟧')).toBe('## 标题\n- a “x y”');
   });
 });
