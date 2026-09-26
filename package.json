@@ -2,7 +2,7 @@
   "name": "kuai-kan",
   "description": "KuaiKan: AI webpage summary with your own LLM API, customized prompts, lightweight, no subscription, privacy friendly",
   "private": false,
-  "version": "3.1.0",
+  "version": "3.1.1",
   "type": "module",
   "scripts": {
     "dev": "wxt",
