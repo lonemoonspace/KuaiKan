@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { extractCitationPhrases, buildCitationChips } from '@/components/ai-elements/message';
+import {
+  buildCitationChips,
+  extractCitationPhrases,
+  getHeadingTone,
+} from '@/components/ai-elements/message';
 
 // These two functions implement the citation-chip convention agreed with the
 // prompts (see message.tsx's CITATION_PATTERN comment): a key point may end
@@ -99,5 +103,24 @@ describe('buildCitationChips', () => {
     expect(buildCitationChips('<p>no citations here</p>', ['unused'])).toBe(
       '<p>no citations here</p>',
     );
+  });
+});
+
+describe('getHeadingTone', () => {
+  it('marks the built-in presets\' conclusion and caveat sections', () => {
+    expect(getHeadingTone('核心结论')).toBe('key');
+    expect(getHeadingTone('注意事项')).toBe('caution');
+  });
+
+  it('recognises common English and Chinese variants', () => {
+    expect(getHeadingTone('Key Takeaways')).toBe('key');
+    expect(getHeadingTone('TL;DR')).toBe('key');
+    expect(getHeadingTone('风险与限制')).toBe('caution');
+    expect(getHeadingTone('Caveats')).toBe('caution');
+  });
+
+  it('leaves ordinary headings untoned', () => {
+    expect(getHeadingTone('关键要点')).toBeNull();
+    expect(getHeadingTone('详细内容')).toBeNull();
   });
 });

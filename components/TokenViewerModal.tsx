@@ -9,11 +9,25 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('content:TokenViewerModal');
 
+// Literal class names so Tailwind picks up both the light and dark variant.
 const TOKEN_COLORS = [
-  'bg-red-200', 'bg-orange-200', 'bg-amber-200', 'bg-yellow-200', 
-  'bg-lime-200', 'bg-green-200', 'bg-emerald-200', 'bg-teal-200', 
-  'bg-cyan-200', 'bg-sky-200', 'bg-blue-200', 'bg-indigo-200', 
-  'bg-violet-200', 'bg-purple-200', 'bg-fuchsia-200', 'bg-pink-200', 'bg-rose-200'
+  'bg-red-200 dark:bg-red-500/30',
+  'bg-orange-200 dark:bg-orange-500/30',
+  'bg-amber-200 dark:bg-amber-500/30',
+  'bg-yellow-200 dark:bg-yellow-500/30',
+  'bg-lime-200 dark:bg-lime-500/30',
+  'bg-green-200 dark:bg-green-500/30',
+  'bg-emerald-200 dark:bg-emerald-500/30',
+  'bg-teal-200 dark:bg-teal-500/30',
+  'bg-cyan-200 dark:bg-cyan-500/30',
+  'bg-sky-200 dark:bg-sky-500/30',
+  'bg-blue-200 dark:bg-blue-500/30',
+  'bg-indigo-200 dark:bg-indigo-500/30',
+  'bg-violet-200 dark:bg-violet-500/30',
+  'bg-purple-200 dark:bg-purple-500/30',
+  'bg-fuchsia-200 dark:bg-fuchsia-500/30',
+  'bg-pink-200 dark:bg-pink-500/30',
+  'bg-rose-200 dark:bg-rose-500/30',
 ];
 
 interface TokenViewerModalProps {
@@ -84,13 +98,13 @@ export function TokenViewerModal({ isOpen, onClose, textContent, maxInputTokens,
   const maxSlider = Math.max(realTokens, maxInputTokens);
 
   return (
-    <div className="absolute inset-0 z-50 bg-white flex flex-col pointer-events-auto rounded-[inherit] overflow-hidden">
+    <div className="absolute inset-0 z-50 bg-card text-card-foreground flex flex-col pointer-events-auto rounded-[inherit] overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-100 bg-white shrink-0 shadow-sm z-10">
-        <div className="flex items-center gap-2 text-sm font-medium text-zinc-700">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-card shrink-0 z-10">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <span>{uiMessages.content.tokenPreview}</span>
           <div className="group relative flex items-center justify-center">
-            <Info size={14} className="text-zinc-400 cursor-help" />
+            <Info size={14} className="text-muted-foreground cursor-help" />
             <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-60 p-2 bg-zinc-800 text-zinc-100 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 text-center font-normal leading-relaxed before:content-[''] before:absolute before:bottom-full before:left-1/2 before:-translate-x-1/2 before:border-4 before:border-transparent before:border-b-zinc-800">
               {uiMessages.content.tokenViewerInfoTip}
             </div>
@@ -98,7 +112,7 @@ export function TokenViewerModal({ isOpen, onClose, textContent, maxInputTokens,
         </div>
         <button 
           onClick={onClose}
-          className="p-1 rounded hover:bg-zinc-100 text-zinc-500 hover:text-zinc-700 transition-colors"
+          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
           title={uiMessages.content.close}
         >
           <X size={16} />
@@ -106,9 +120,9 @@ export function TokenViewerModal({ isOpen, onClose, textContent, maxInputTokens,
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-4 leading-[1.6] whitespace-pre-wrap font-mono text-sm text-zinc-800 break-words bg-white">
+      <div className="flex-1 overflow-auto p-4 leading-[1.6] whitespace-pre-wrap font-mono text-sm text-foreground break-words bg-card">
         {loading ? (
-          <div className="flex items-center justify-center h-full text-zinc-400">
+          <div className="flex items-center justify-center h-full text-muted-foreground">
             <div className="animate-pulse">Loading tokens...</div>
           </div>
         ) : (
@@ -118,7 +132,7 @@ export function TokenViewerModal({ isOpen, onClose, textContent, maxInputTokens,
             return (
               <span 
                 key={i} 
-                className={`relative px-[0.5px] rounded-[1px] transition-colors duration-150 ${isExcluded ? 'bg-zinc-100 text-zinc-300' : colorClass}`}
+                className={`relative px-[0.5px] rounded-[1px] transition-colors duration-150 ${isExcluded ? 'bg-muted text-muted-foreground/50' : colorClass}`}
                 title={`Token ID: ${p.id}`}
               >
                 {p.text}
@@ -129,12 +143,12 @@ export function TokenViewerModal({ isOpen, onClose, textContent, maxInputTokens,
       </div>
 
       {/* Footer / Slider */}
-      <div className="px-4 py-3 border-t border-zinc-100 bg-zinc-50 shrink-0">
+      <div className="px-4 py-3 border-t border-border bg-muted/40 shrink-0">
         <div className="flex items-center gap-3 mb-2">
-          <label className="text-xs font-medium text-zinc-600 flex-1">
-            Tokens: <span className="text-emerald-700 font-bold text-sm">{sliderValue}</span> / {realTokens}
+          <label className="text-xs font-medium text-muted-foreground flex-1">
+            Tokens: <span className="text-primary font-bold text-sm">{sliderValue}</span> / {realTokens}
           </label>
-          <span className="text-xs text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded border border-zinc-200">
+          <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border">
             Max Input Limit: {maxInputTokens === 0 ? '∞' : maxInputTokens}
           </span>
         </div>
@@ -145,7 +159,7 @@ export function TokenViewerModal({ isOpen, onClose, textContent, maxInputTokens,
             max={maxSlider} 
             value={sliderValue} 
             onChange={(e) => setSliderValue(Number(e.target.value))}
-            className="w-full h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-emerald-600 outline-none hover:bg-zinc-300 transition-colors focus:ring-2 focus:ring-emerald-500/20"
+            className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-[hsl(var(--primary))] outline-none transition-colors focus:ring-2 focus:ring-ring/20"
           />
         </div>
       </div>

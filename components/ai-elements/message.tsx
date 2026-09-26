@@ -57,8 +57,19 @@ const isSafeUrl = (href: string) => {
   }
 };
 
-const addEvidenceLabel = (html: string) =>
-  html.replace(/<(blockquote|cite)\b/gi, '<$1 data-evidence="true"');
+export type HeadingTone = 'key' | 'caution';
+
+/**
+ * Section tone of a summary heading, used to style the built-in presets'
+ * "核心结论" and "注意事项" sections (see `.kuai-markdown h2[data-tone]` in
+ * entrypoints/content/style.css). Matched on the heading text so custom
+ * prompts with similar headings get the same treatment.
+ */
+export function getHeadingTone(text: string): HeadingTone | null {
+  if (/结论|要点总结|tl;?dr|takeaway|conclusion/i.test(text)) return 'key';
+  if (/注意|风险|限制|局限|警告|caveat|caution|warning|limitation/i.test(text)) return 'caution';
+  return null;
+}
 
 // `marked` itself caches its dynamic import, but re-`new Renderer()`-ing and
 // re-wiring the three overridden methods on every streamed chunk was pure
@@ -75,6 +86,11 @@ function loadMarkdownRenderer(): Promise<(text: string) => string> {
         const safeHref = isSafeUrl(href) ? href : '#';
         const text = renderer.parser.parseInline(tokens);
         return `<a href="${escapeHtml(safeHref)}"${title ? ` title="${escapeHtml(title)}"` : ''}>${text}</a>`;
+      };
+      renderer.heading = ({ tokens, depth, text }) => {
+        const tone = getHeadingTone(text);
+        const inner = renderer.parser.parseInline(tokens);
+        return `<h${depth}${tone ? ` data-tone="${tone}"` : ''}>${inner}</h${depth}>\n`;
       };
       renderer.image = ({ href, title, text }) => {
         // Images get the same protocol whitelist as links: LLM output is
@@ -453,7 +469,7 @@ export const MessageResponse = memo(
         // chips back in on the rendered HTML.
         const extracted = extractCitationPhrases(text);
         const parsed = render(extracted.text);
-        setHtml(buildCitationChips(addEvidenceLabel(parsed), extracted.phrases));
+        setHtml(buildCitationChips(parsed, extracted.phrases));
         // TEMPORARY timing instrumentation (first markdown paint handed to React).
         if (text) markTiming('首次渲染到面板');
       });
@@ -540,7 +556,7 @@ export const MessageResponse = memo(
     return (
       <div
         className={cn(
-          'kuai-markdown size-full prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words selection:bg-primary/15',
+          'kuai-markdown size-full selection:bg-primary/15',
           className
         )}
         dangerouslySetInnerHTML={{ __html: html || `<p>${escapeHtml(children)}</p>` }}

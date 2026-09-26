@@ -12,6 +12,12 @@ type FloatingState = { width: number; height: number; left: string; top: string;
 
 const MIN_VISIBLE_HEADER = 50;
 
+// Default size in the panel's px-based reference unit (em here would follow
+// whatever font-size the element inherits). 34 units ≈ 30 Chinese characters
+// per line of summary text.
+const DEFAULT_PANEL_WIDTH = 'calc(34 * var(--webpage-summary-panel-srem))';
+const DEFAULT_PANEL_HEIGHT = 'calc(36 * var(--webpage-summary-panel-srem))';
+
 function isHeaderReachable(el: HTMLElement): boolean {
   const rect = el.getBoundingClientRect();
   const viewportWidth = document.documentElement.clientWidth;
@@ -77,8 +83,8 @@ function UnifiedPanelRenderer({ children, storageKey }: { children: React.ReactN
         el.style.bottom = '';
       }
     } else {
-      el.style.width = '30em';
-      el.style.height = '36em';
+      el.style.width = DEFAULT_PANEL_WIDTH;
+      el.style.height = DEFAULT_PANEL_HEIGHT;
       el.style.left = '';
       el.style.top = '4em';
       el.style.right = '4em';
@@ -93,7 +99,7 @@ function UnifiedPanelRenderer({ children, storageKey }: { children: React.ReactN
     <div
       ref={containerRef}
       onMouseDown={startDrag}
-      className="flex flex-col z-[2147483647] fixed bg-background rounded-xl shadow-[0_12px_48px_rgba(0,0,0,0.12)] border border-zinc-200/60 max-w-[100vw] max-h-[100vh] min-w-[384px] min-h-[224px]"
+      className="flex flex-col z-[2147483647] fixed bg-background rounded-xl shadow-[0_12px_48px_rgba(0,0,0,0.14)] border border-border max-w-[100vw] max-h-[100vh] min-w-[384px] min-h-[224px]"
     >
       <div className="absolute bottom-0 left-0 w-full h-1.5 cursor-ns-resize z-50" onMouseDown={(e) => startResize(e, 'bottom')} />
       <div className="absolute top-0 left-0 w-1.5 h-full cursor-ew-resize z-50" onMouseDown={(e) => startResize(e, 'left')} />

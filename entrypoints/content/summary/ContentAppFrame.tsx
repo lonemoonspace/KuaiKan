@@ -46,6 +46,9 @@ const formatTokens = (val: number) => {
 function ReasoningBlock({ text, streaming }: { text: string; streaming: boolean }) {
   const uiMessages = getUiMessages();
   const startedAtRef = useRef(Date.now());
+  // A block restored from an earlier visit mounts already finished, so its
+  // duration was never observed; show no seconds rather than "0 秒".
+  const [timed] = useState(streaming);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
@@ -65,7 +68,7 @@ function ReasoningBlock({ text, streaming }: { text: string; streaming: boolean 
         <ChevronRight size={12} className="shrink-0 transition-transform group-open:rotate-90" />
         <span className={streaming ? 'animate-pulse' : undefined}>{label}</span>
         <span className="opacity-70">
-          · {elapsedSeconds} 秒 · {text.length} 字
+          {timed ? `· ${elapsedSeconds} 秒 ` : ''}· {text.length} 字
         </span>
       </summary>
       <div className="max-h-80 overflow-y-auto whitespace-pre-wrap break-words border-t border-border/60 px-3 py-2 leading-relaxed">
@@ -145,7 +148,10 @@ export function ContentAppFrame({
 
 
   return (
-    <div className="kuai-summary-panel flex flex-col w-full h-full bg-background text-foreground overflow-hidden relative pointer-events-auto rounded-xl">
+    <div
+      lang="zh-CN"
+      className="kuai-summary-panel flex flex-col w-full h-full overflow-hidden relative pointer-events-auto rounded-xl"
+    >
       <Toaster
         position="bottom-right"
         duration={6000}
@@ -158,7 +164,7 @@ export function ContentAppFrame({
       />
       {/* 顶部栏 / Top Bar */}
       <header
-        className="px-1 py-1 bg-background border-b border-border grid grid-cols-[1fr_auto_1fr] items-center cursor-move whitespace-nowrap gap-2 select-none"
+        className="px-1 py-1 border-b grid grid-cols-[1fr_auto_1fr] items-center cursor-move whitespace-nowrap gap-2 select-none"
         data-drag-handle
       >
         <div className="flex items-stretch gap-1.5 justify-start shrink-0 h-full">
@@ -202,7 +208,7 @@ export function ContentAppFrame({
           onModelIdChange={handleModelIdChange}
         />
 
-        <div className="flex items-center gap-0.5 text-zinc-500 dark:text-zinc-300 justify-end shrink-0 h-full">
+        <div className="flex items-center gap-0.5 text-muted-foreground justify-end shrink-0 h-full">
           <button
             className="flex items-center justify-center size-6 border border-border rounded hover:bg-muted shadow-sm shrink-0 transition-colors hover:text-foreground"
             title={uiMessages.content.settings}
@@ -220,81 +226,69 @@ export function ContentAppFrame({
         </div>
       </header>
 
-      <div className="flex-1 relative min-h-0 flex flex-col">
-        {/* 悬浮在右上角的工具栏 */}
-        <div
-          data-section="top-sticky-line"
-          className="absolute top-0.5 left-1 right-3 flex justify-between flex-row z-10 pointer-events-none [&>*]:pointer-events-auto"
-        >
-          <div className="flex items-center rounded-lg underline decoration-dashed text-nowrap text-[10px] font-light bg-background/10 px-1.5 py-0.5 text-zinc-500 leading-tight">
-            <div title={uiMessages.content.viewChangeHint}>
-              <span>
-                {pageContentTokenCount !== null
-                  ? (effectiveTokenLimit > 0 && pageContentTokenCount > effectiveTokenLimit)
-                    ? `${uiMessages.content.inputTokensLabel}${formatTokens(effectiveTokenLimit)}    |  ${uiMessages.content.totalLabel}${formatTokens(pageContentTokenCount)} `
-                    : `${uiMessages.content.inputTokensLabel}${formatTokens(pageContentTokenCount)}`
-                  : `${uiMessages.content.inputTokensLabel}${uiMessages.content.calculating}`}
-              </span>
-            </div>
-            <button
-              className="inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-md text-[10px] font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-3 [&_svg]:shrink-0 hover:bg-zinc-100 hover:text-foreground w-5 h-5 text-zinc-500 ml-1"
-              onClick={() => setIsTokenViewerOpen(true)}
-            >
-              <ScanEye size={12} strokeWidth={2} />
-            </button>
-          </div>
-          <div className="flex items-center gap-1 pointer-events-none [&>*]:pointer-events-auto">
-            {enableTokenUsageView && messages.length > 0 && !isBusy && (
-              <UsageDisplay messages={messages} currentModel={currentModel} />
-            )}
-          </div>
-        </div>
-
-        <div className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden" role="log">
-          <div className="flex flex-col gap-10 px-5 pt-10 pb-16 sm:px-7">
-            {messages.filter((message) => message.role === 'assistant').map((message) => {
-              return (
-                <Message from={message.role} key={message.id} className="kuai-message-enter">
-                  <MessageContent className="w-full rounded-2xl border border-border/60 bg-background/55 px-4 py-3 shadow-sm backdrop-blur-sm sm:px-5 sm:py-4">
-                    {message.parts.map((part, i) => {
-                      if (part.type === 'text') {
-                        return (
-                          <MessageResponse
-                            key={`${message.id}-${i}`}
-                            onCitationNotFound={() => toast.warning(uiMessages.content.citationNotFound)}
-                          >
-                            {part.text}
-                          </MessageResponse>
-                        );
-                      }
-                      if (part.type === 'reasoning' && part.text) {
-                        return (
-                          <ReasoningBlock
-                            key={`${message.id}-${i}`}
-                            text={part.text}
-                            streaming={isBusy && part.state !== 'done'}
-                          />
-                        );
-                      }
-                      return null;
-                    })}
-                  </MessageContent>
-                </Message>
-              );
-            })}
-            {status === 'submitted' && (
-              <Message from="assistant">
-                <MessageContent className="w-full rounded-2xl border border-border/60 bg-background/55 px-4 py-3 shadow-sm backdrop-blur-sm sm:px-5 sm:py-4">
-                  <div className="flex items-center gap-2">
-                    <div className="size-4 animate-spin rounded-full border-2 border-border border-t-zinc-900" />
-                    <span className="text-sm text-zinc-500">{uiMessages.content.thinking}</span>
-                  </div>
+      <div className="kuai-scroll relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden" role="log">
+        <div className="flex flex-col gap-6 px-5 pt-4 pb-6">
+          {messages.filter((message) => message.role === 'assistant').map((message) => {
+            return (
+              <Message from={message.role} key={message.id} className="kuai-message-enter">
+                <MessageContent className="w-full">
+                  {message.parts.map((part, i) => {
+                    if (part.type === 'text') {
+                      return (
+                        <MessageResponse
+                          key={`${message.id}-${i}`}
+                          onCitationNotFound={() => toast.warning(uiMessages.content.citationNotFound)}
+                        >
+                          {part.text}
+                        </MessageResponse>
+                      );
+                    }
+                    if (part.type === 'reasoning' && part.text) {
+                      return (
+                        <ReasoningBlock
+                          key={`${message.id}-${i}`}
+                          text={part.text}
+                          streaming={isBusy && part.state !== 'done'}
+                        />
+                      );
+                    }
+                    return null;
+                  })}
                 </MessageContent>
               </Message>
-            )}
-          </div>
+            );
+          })}
+          {status === 'submitted' && (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <div className="size-4 animate-spin rounded-full border-2 border-border border-t-foreground" />
+              <span>{uiMessages.content.thinking}</span>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Status bar: in normal flow below the summary, so it never covers text. */}
+      <footer className="kuai-status-bar flex items-center justify-between gap-2 px-3 py-1 shrink-0">
+        <div className="flex items-center gap-1 min-w-0" title={uiMessages.content.viewChangeHint}>
+          <span className="truncate tabular-nums">
+            {pageContentTokenCount !== null
+              ? (effectiveTokenLimit > 0 && pageContentTokenCount > effectiveTokenLimit)
+                ? `${uiMessages.content.inputTokensLabel}${formatTokens(effectiveTokenLimit)} · ${uiMessages.content.totalLabel}${formatTokens(pageContentTokenCount)}`
+                : `${uiMessages.content.inputTokensLabel}${formatTokens(pageContentTokenCount)}`
+              : `${uiMessages.content.inputTokensLabel}${uiMessages.content.calculating}`}
+          </span>
+          <button
+            className="inline-flex items-center justify-center shrink-0 size-5 rounded hover:bg-muted hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title={uiMessages.content.tokenPreview}
+            onClick={() => setIsTokenViewerOpen(true)}
+          >
+            <ScanEye size={13} strokeWidth={2} />
+          </button>
+        </div>
+        {enableTokenUsageView && messages.length > 0 && !isBusy && (
+          <UsageDisplay messages={messages} currentModel={currentModel} />
+        )}
+      </footer>
 
       {pageContent && (
         <TokenViewerModal
