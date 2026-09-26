@@ -19,6 +19,7 @@ import {
   type GeneralSettingKey,
   type GeneralSettings,
   type LogLevel,
+  type PanelFontSize,
   type SummaryInputExceedBehaviour,
 } from '@/constants/general-settings';
 import { getModelDisplayIcon } from '@/constants/model-settings';
@@ -61,8 +62,14 @@ const OVERFLOW_LABELS: Record<
 
 type BooleanSettingKey = Exclude<
   GeneralSettingKey,
-  'pageTextExtractMethod' | 'logLevel' | 'summaryInputExceedBehaviour'
+  'pageTextExtractMethod' | 'logLevel' | 'summaryInputExceedBehaviour' | 'panelFontSize'
 >;
+
+const PANEL_FONT_SIZE_OPTIONS: Array<{ label: string; value: PanelFontSize }> = [
+  { label: '小', value: 'small' },
+  { label: '中', value: 'medium' },
+  { label: '大', value: 'large' },
+];
 
 /**
  * One switch per row, grouped under a lightweight label. Everything shares the
@@ -294,6 +301,18 @@ export function GeneralPage() {
 
       <Group label="界面与显示">
         <Row control={themeControl} description="设置页与页面内面板共用。" label="主题" />
+        <Row
+          control={
+            <Segmented
+              onChange={(value) => updateSetting('panelFontSize', value)}
+              options={PANEL_FONT_SIZE_OPTIONS}
+              value={settings.panelFontSize}
+            />
+          }
+          description="页面内面板里总结正文的大小，已打开的面板立即生效。"
+          label="面板字号"
+          storageKey={GENERAL_SETTING_DEFINITIONS.panelFontSize.storageKey}
+        />
         {toggleRow('enableFloatingBall')}
         {toggleRow('enableTokenUsageView')}
       </Group>

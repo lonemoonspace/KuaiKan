@@ -25,6 +25,27 @@ export function isSummaryInputExceedBehaviour(
   );
 }
 
+/**
+ * Size of the summary text in the in-page panel. Each step sets the panel's
+ * reference unit (`--webpage-summary-panel-srem`) for the reading area; the
+ * summary body is 15/16 of it, so medium keeps the 15px default.
+ */
+export const PANEL_FONT_SIZES = ['small', 'medium', 'large'] as const;
+export type PanelFontSize = (typeof PANEL_FONT_SIZES)[number];
+
+export const PANEL_FONT_SIZE_REM_PX: Record<PanelFontSize, number> = {
+  small: 14,
+  medium: 16,
+  large: 18,
+};
+
+export function isPanelFontSize(value: unknown): value is PanelFontSize {
+  return (
+    typeof value === 'string' &&
+    (PANEL_FONT_SIZES as readonly string[]).includes(value)
+  );
+}
+
 const LOG_LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3, silent: 4 };
 
 export function isLogLevel(value: unknown): value is LogLevel {
@@ -78,6 +99,17 @@ function summaryInputExceedBehaviourSetting(
   };
 }
 
+function panelFontSizeSetting(
+  storageKey: StorageItemKey,
+  defaultValue: PanelFontSize,
+): GeneralSettingDefinition<PanelFontSize> {
+  return {
+    defaultValue,
+    parse: (value, fallback) => (isPanelFontSize(value) ? value : fallback),
+    storageKey,
+  };
+}
+
 // Theme is a per-device UI preference shared by every entry point. It lives
 // outside GENERAL_SETTING_DEFINITIONS on purpose so "restore defaults" does not
 // flip the appearance, but the key is defined here like every other one.
@@ -89,6 +121,7 @@ export const GENERAL_SETTING_DEFINITIONS = {
     'readability',
   ),
   enableFloatingBall: booleanSetting('local:enable-floating-ball', true),
+  panelFontSize: panelFontSizeSetting('local:panel-font-size', 'medium'),
   enableSummaryWindowDefault: booleanSetting(
     'local:enable-summary-window-default',
     false,

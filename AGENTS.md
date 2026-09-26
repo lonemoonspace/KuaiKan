@@ -120,6 +120,7 @@ ServerFrame:  { type: 'chunk'; chunk: UIMessageChunk } | { type: 'error'; messag
 | `local:summary-input-exceed-behaviour` | `front/middle/back/nothing` | 超长内容裁剪策略 |
 | `local:page-text-extract-method` | `readability/dom-heuristic` | 正文提取方式 |
 | `local:log-level` | `debug/info/warn/error/silent` | 日志级别 |
+| `local:panel-font-size` | `small/medium/large` | 面板正文字号（14/16/18px 基准单位，只作用于阅读区，见 `PANEL_FONT_SIZE_REM_PX`） |
 | `local:enable-floating-ball` 等布尔开关 | `boolean` | 各开关（定义见 `GENERAL_SETTING_DEFINITIONS`，含 `enable-tokan-usage-view`——拼写 TOKAN，保持兼容勿改） |
 | `local:migration-version` | `number` | 迁移幂等标记（`lib/migration.ts`） |
 
