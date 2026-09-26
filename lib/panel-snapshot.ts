@@ -6,9 +6,12 @@ import type { StorageItemKey } from '#imports';
  * open, and the summary it showed. Only assistant messages are kept — the
  * system and user messages carry the rendered prompt with the full page text,
  * which is large and never rendered.
+ *
+ * `open` is recorded only when the user opens or closes the panel; while it is
+ * undefined the "open the panel by default" setting decides.
  */
 export type PanelSnapshot = {
-  open: boolean;
+  open?: boolean;
   messages: UIMessage[];
   updatedAt: number;
 };
@@ -66,7 +69,7 @@ export function applyPanelSnapshotPatch(
   const next: PanelSnapshotMap = {
     ...snapshots,
     [pageKey]: {
-      open: patch.open ?? previous?.open ?? false,
+      open: patch.open ?? previous?.open,
       messages:
         patch.messages !== undefined
           ? persistableMessages(patch.messages)
