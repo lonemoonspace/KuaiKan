@@ -217,7 +217,7 @@ export function ContentEntrance({ ctx }: { ctx: ContentScriptContext }) {
         >
           <div
             onClick={() => setPanelOpen(true)}
-            className="relative flex items-center justify-center p-1.5 rounded-full border border-purple-200/80 bg-purple-50/20 hover:bg-purple-100/70 hover:border-purple-300 transition-all duration-200 shadow-sm cursor-pointer group"
+            className="relative flex items-center justify-center p-1.5 rounded-full border border-primary/20 bg-card/80 hover:bg-accent hover:border-primary/40 transition-all duration-200 shadow-sm cursor-pointer group"
             title={messages.content.badgeLabel}
           >
             <img

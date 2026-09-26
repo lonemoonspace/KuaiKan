@@ -111,7 +111,7 @@ function Row({
           </span>
         ) : null}
         {caution ? (
-          <span className="mt-1 block border-l-2 border-amber-500 bg-amber-50 px-2 py-0.5 text-[11px] leading-4 text-amber-950">
+          <span className="mt-1 block border-l-2 border-amber-500 bg-amber-50 px-2 py-0.5 text-[11px] leading-4 text-amber-950 dark:bg-amber-500/10 dark:text-amber-200">
             {caution}
           </span>
         ) : null}

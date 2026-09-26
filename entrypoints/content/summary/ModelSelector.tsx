@@ -76,7 +76,7 @@ export function ModelSelector({
         </select>
         <ChevronDown
           size={12}
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
         />
       </div>
       <div className="relative flex items-center">
@@ -97,7 +97,7 @@ export function ModelSelector({
         </select>
         <ChevronDown
           size={12}
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
         />
       </div>
     </div>
