@@ -32,7 +32,7 @@ async function mountSummaryBadge(ctx: ContentScriptContext) {
     zIndex: 2147483647,
     onMount(container) {
       const root = createRoot(container);
-      root.render(createElement(ContentEntrance));
+      root.render(createElement(ContentEntrance, { ctx }));
       return root;
     },
     onRemove(root) {

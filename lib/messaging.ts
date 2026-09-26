@@ -1,4 +1,5 @@
 import type { SummaryInputExceedBehaviour } from '@/constants/general-settings';
+import type { PanelSnapshot, PanelSnapshotPatch } from '@/lib/panel-snapshot';
 import { defineExtensionMessaging } from '@webext-core/messaging';
 
 export interface ProtocolMap {
@@ -10,6 +11,10 @@ export interface ProtocolMap {
 
   /** Seeds the default prompt library exactly once (handled single-flight in the background). */
   seedPromptLibrary(): Promise<{ seeded: boolean }>;
+
+  /** Per-tab, per-page panel state (open flag + summary), kept in storage.session by the background */
+  loadPanelSnapshot(input: { pageKey: string }): PanelSnapshot | null;
+  savePanelSnapshot(input: { pageKey: string; patch: PanelSnapshotPatch }): void;
 
   /** Token counting and truncation */
   countInputTokens(input: { text: string }): number;
