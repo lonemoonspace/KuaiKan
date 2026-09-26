@@ -50,7 +50,7 @@
 | 框架 | React + TypeScript |
 | 构建 | WXT + Vite |
 | 包管理 | npm（仅保留 `package-lock.json`，勿再引入 pnpm-lock） |
-| 样式 | Tailwind CSS + tailwindcss-animate |
+| 样式 | Tailwind CSS + tailwindcss-animate；颜色、字体 token 统一在 `assets/theme.css`（面板 `:host` 与 popup/设置页 `:root` 共用一套，只有一个主色），面板正文排版在 `entrypoints/content/style.css`（字号四档 12/13/15/17px，全部基于 `--webpage-summary-panel-srem`） |
 | 组件库 | Radix UI (React) + shadcn/ui 体系 + `ai-elements` |
 | 图标 | Lucide React |
 | 工具 | CVA, clsx, tailwind-merge |
