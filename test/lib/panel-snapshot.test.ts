@@ -38,9 +38,16 @@ describe('getPageKey', () => {
 });
 
 describe('applyPanelSnapshotPatch', () => {
-  it('creates a closed, empty snapshot and applies the patch to it', () => {
+  it('creates an empty snapshot and applies the patch to it', () => {
     const next = applyPanelSnapshotPatch({}, 'a', { open: true }, 10);
     expect(next.a).toEqual({ open: true, messages: [], updatedAt: 10 });
+  });
+
+  it('leaves the open state unset when only messages were saved', () => {
+    // The panel may have been opened by the "open by default" setting rather
+    // than by the user; recording `open: false` here would override it.
+    const next = applyPanelSnapshotPatch({}, 'a', { messages: [message('assistant', 'hi')] }, 1);
+    expect(next.a.open).toBeUndefined();
   });
 
   it('merges the open flag and messages written by separate patches', () => {
