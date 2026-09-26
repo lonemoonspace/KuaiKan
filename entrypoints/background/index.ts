@@ -9,6 +9,7 @@ import { registerTokenCountMessages } from './token-count-bg';
 import { setupOnInstallHook } from './onInstall';
 import { registerControlMessages, addContextMenus, initializeControlHandlers } from './control';
 import { setupCorsFixRule } from './cors-fix';
+import { registerPanelSnapshotMessages } from './panel-snapshot-bg';
 
 import { createLogger } from '@/lib/logger';
 
@@ -42,6 +43,7 @@ export default defineBackground(() => {
   setupCorsFixRule().catch((err) => logger.error('Failed to setup CORS fix rule:', err));
   registerAiSdkConnectBridge();
   registerTokenCountMessages();
+  registerPanelSnapshotMessages();
   registerControlMessages();
   addContextMenus().catch((err) => logger.error('Failed to setup context menus:', err));
   initializeControlHandlers();

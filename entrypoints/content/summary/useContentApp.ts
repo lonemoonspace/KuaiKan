@@ -3,6 +3,7 @@ import Mustache from 'mustache';
 import { toast } from 'sonner';
 import { useChat } from '@ai-sdk/react';
 import { storage } from '#imports';
+import type { UIMessage } from 'ai';
 
 import { AiSdkConnectTransport } from '@/lib/ai-sdk-connect-transport';
 import {
@@ -53,7 +54,21 @@ const logger = createLogger('content:useContentApp');
 // templates are rendered for prompt text only, so disable escaping globally.
 Mustache.escape = (value: string) => value;
 
-export function useContentApp() {
+// While a summary streams in, save it at most this often, so a full page
+// navigation mid-stream still leaves most of it to restore.
+const PERSIST_THROTTLE_MS = 1000;
+
+type UseContentAppOptions = {
+  /** The summary this page showed last time; the chat starts from it. */
+  initialMessages?: UIMessage[];
+  /** Receives the summary whenever it changes, for per-page restore. */
+  onPersistMessages?: (messages: UIMessage[]) => void;
+};
+
+export function useContentApp({
+  initialMessages,
+  onPersistMessages,
+}: UseContentAppOptions = {}) {
   const messagesI18n = getUiMessages();
   const [models, setModels] = useState<ModelConfigItem[]>([]);
   const [prompts, setPrompts] = useState<PromptConfigItem[]>([]);
@@ -107,12 +122,58 @@ export function useContentApp() {
     [],
   );
 
+  // Read once: the chat is seeded at mount and owns its messages after that.
+  const [restoredMessages] = useState(() => initialMessages ?? []);
+
   const { error, messages, sendMessage, setMessages, status, stop } = useChat({
     transport,
+    messages: restoredMessages,
   });
 
   const statusRef = useRef(status);
   statusRef.current = status;
+
+  const onPersistMessagesRef = useRef(onPersistMessages);
+  onPersistMessagesRef.current = onPersistMessages;
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  // The last array handed to onPersistMessages; the restored one counts as
+  // already saved.
+  const persistedMessagesRef = useRef<UIMessage[]>(restoredMessages);
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const persistMessages = useCallback(() => {
+    if (persistTimerRef.current !== null) {
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
+    if (messagesRef.current === persistedMessagesRef.current) return;
+    persistedMessagesRef.current = messagesRef.current;
+    onPersistMessagesRef.current?.(messagesRef.current);
+  }, []);
+
+  // Save the summary so this page can show it again after navigating away and
+  // back. Settled states are saved at once; while streaming, at most once per
+  // PERSIST_THROTTLE_MS (the pending timer is deliberately not reset by each
+  // new chunk, or it would never fire mid-stream).
+  useEffect(() => {
+    if (status !== 'streaming' && status !== 'submitted') {
+      persistMessages();
+      return;
+    }
+    persistTimerRef.current ??= setTimeout(persistMessages, PERSIST_THROTTLE_MS);
+  }, [messages, status, persistMessages]);
+
+  // Unmounting (panel closed, or the page changed under a single-page app)
+  // ends this chat: stop a stream nobody will see and save what it produced.
+  useEffect(() => {
+    return () => {
+      if (statusRef.current === 'streaming' || statusRef.current === 'submitted') {
+        stop();
+      }
+      persistMessages();
+    };
+  }, [stop, persistMessages]);
 
   const currentModel = useMemo(
     () => models.find((m) => m.id === currentModelId),
@@ -271,7 +332,9 @@ export function useContentApp() {
           }
         }
 
-        if (generalSettings.enableAutoBeginSummary) {
+        // A restored summary is what the user came back to see; do not
+        // replace it with a fresh run.
+        if (generalSettings.enableAutoBeginSummary && restoredMessages.length === 0) {
           setAutoSummarizePending(true);
         }
       } catch (e) {
@@ -290,7 +353,8 @@ export function useContentApp() {
     return () => {
       active = false;
     };
-  }, []);
+    // `restoredMessages` is fixed at mount, so this still runs once.
+  }, [restoredMessages.length]);
 
   // Model-config edits made elsewhere (options page, popup) have to reach a
   // panel that is already open: both the fetched model pool and the selected
@@ -316,18 +380,21 @@ export function useContentApp() {
     };
   }, []);
 
-  // Re-extract the body when the page navigated (SPA route change) since the
-  // last extraction. Returns the content to summarize; falls back to the
-  // previous content if the new route yielded nothing.
+  // Re-extract the body when the page navigated (SPA route change) or its
+  // text changed since the last extraction — after a route change the panel
+  // remounts and may have extracted before the new route finished rendering.
+  // The cache lookup validates against the live DOM text. Returns the content
+  // to summarize; falls back to the previous content if extraction yielded
+  // nothing.
   const refreshPageContentIfStale = useCallback(
     async (
       current: WebpageContent | null,
       generalSettings: GeneralSettings,
     ): Promise<WebpageContent | null> => {
       const href = window.location.href;
-      if (pageHrefRef.current === href) return current;
-
       const cached = getCachedPageContent(href);
+      if (pageHrefRef.current === href && cached) return current;
+
       let fresh: WebpageContent | null = cached?.content ?? null;
       if (!fresh) {
         try {
