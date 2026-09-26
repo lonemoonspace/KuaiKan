@@ -100,7 +100,8 @@ export function ContentEntrance({ ctx }: { ctx: ContentScriptContext }) {
       .then(([snapshot, settings]) => {
         if (!active) return;
         if (snapshot) pageMessagesRef.current.set(pageKey, snapshot.messages);
-        const open = snapshot ? snapshot.open : settings.enableSummaryWindowDefault;
+        // Only an explicit open/close is stored; otherwise the setting decides.
+        const open = snapshot?.open ?? settings.enableSummaryWindowDefault;
         setMainPanelOpen(open || openedExplicitlyRef.current);
       })
       .catch((e) => logger.error('[ContentEntrance] Failed to restore the panel', e))
