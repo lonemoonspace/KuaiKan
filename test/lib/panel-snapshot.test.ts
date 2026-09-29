@@ -93,8 +93,14 @@ describe('applyPanelSnapshotPatch', () => {
     snapshots = applyPanelSnapshotPatch(snapshots, 'new', { open: true }, 101);
 
     expect(Object.keys(snapshots)).toHaveLength(MAX_PANEL_SNAPSHOTS_PER_TAB);
-    expect(snapshots['page-0']).toBeDefined();
+    // The touched page survived (with the flag it was touched with) and the
+    // newest page entered; only the least-recently-updated one was evicted.
+    expect(snapshots['page-0']).toEqual({
+      open: false,
+      messages: [],
+      updatedAt: 100,
+    });
     expect(snapshots['page-1']).toBeUndefined();
-    expect(snapshots.new).toBeDefined();
+    expect(snapshots.new).toEqual({ open: true, messages: [], updatedAt: 101 });
   });
 });

@@ -17,12 +17,10 @@ import {
 } from '@/constants/prompt-settings';
 import { getUiMessages } from '@/lib/i18n';
 import {
-  deletePrompt,
   loadPromptSettings,
-  movePrompt,
-  setDefaultPrompt,
   type PromptSettings,
 } from '@/lib/prompt-settings-storage';
+import type { PromptMutationRequest } from '@/lib/settings-mutations';
 import { sendMessage as sendExtMessage } from '@/lib/messaging';
 import { cn } from '@/lib/utils';
 import { OptionsPageTitle } from '../OptionsPageTitle';
@@ -91,6 +89,19 @@ export function PromptsListPage() {
     setSettings(await loadPromptSettings());
   }
 
+  /**
+   * Run one mutation in the background (the single writer for this key) and
+   * adopt the settings it returns.
+   */
+  async function runMutation(request: PromptMutationRequest): Promise<boolean> {
+    const response = await sendExtMessage('mutatePromptSettings', request);
+    setSettings(response.settings);
+
+    if (response.op === 'create' || response.op === 'update') return true;
+
+    return response.changed;
+  }
+
   async function runPromptAction(
     promptId: string,
     action: () => Promise<boolean>,
@@ -121,7 +132,7 @@ export function PromptsListPage() {
     runPromptAction(
       prompt.id,
       async () => {
-        const deleted = await deletePrompt(prompt.id);
+        const deleted = await runMutation({ op: 'delete', id: prompt.id });
 
         if (deleted) {
           toast.success(messages.prompts.deletedToast);
@@ -231,7 +242,7 @@ export function PromptsListPage() {
                       onChange={() =>
                         runPromptAction(
                           prompt.id,
-                          () => setDefaultPrompt(prompt.id),
+                          () => runMutation({ op: 'setDefault', id: prompt.id }),
                           messages.prompts.selectDefaultFailed,
                         )
                       }
@@ -275,7 +286,7 @@ export function PromptsListPage() {
                     onClick={() =>
                       runPromptAction(
                         prompt.id,
-                        () => movePrompt(prompt.id, 'up'),
+                        () => runMutation({ op: 'move', id: prompt.id, direction: 'up' }),
                         messages.prompts.moveFailed,
                       )
                     }
@@ -292,7 +303,7 @@ export function PromptsListPage() {
                     onClick={() =>
                       runPromptAction(
                         prompt.id,
-                        () => movePrompt(prompt.id, 'down'),
+                        () => runMutation({ op: 'move', id: prompt.id, direction: 'down' }),
                         messages.prompts.moveFailed,
                       )
                     }

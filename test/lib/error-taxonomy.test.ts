@@ -58,6 +58,23 @@ describe('classifySummaryError', () => {
     ).toEqual({ code: 'permission', retryable: false });
   });
 
+  it('does not read a provider status body that merely says "permission" as a site-permission problem', () => {
+    // The user would be told to check the extension's site access while the
+    // real problem is on the provider side.
+    const classified = classifySummaryError({
+      status: 400,
+      message: '[HTTP 400] You do not have permission to access model X',
+    });
+    expect(classified.code).not.toBe('permission');
+  });
+
+  it('still treats a status-less permission failure as a site-permission problem', () => {
+    expect(classifySummaryError({ message: 'permission denied' })).toEqual({
+      code: 'permission',
+      retryable: false,
+    });
+  });
+
   it('only falls back to message-based abort detection when there is no HTTP status', () => {
     // Whole-word match, no status present -> genuinely a local abort.
     expect(classifySummaryError({ message: 'The user aborted a request.' })).toEqual({
@@ -99,6 +116,10 @@ describe('describeSummaryError', () => {
     expect(describeSummaryError('auth', 'fallback')).toBe(
       'API Key 无效或没有权限，请检查模型设置。',
     );
+  });
+
+  it('points a 404 at both the model id and the base URL path', () => {
+    expect(describeSummaryError('model-not-found', 'fallback')).toContain('Base URL');
   });
 
   it('returns the fallback message for unknown', () => {

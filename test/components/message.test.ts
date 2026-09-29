@@ -4,6 +4,7 @@ import {
   citationMarkersToQuotes,
   extractCitationPhrases,
   getHeadingTone,
+  renderMarkdownToHtml,
 } from '@/components/ai-elements/message';
 
 // These two functions implement the citation-chip convention agreed with the
@@ -104,6 +105,62 @@ describe('buildCitationChips', () => {
     expect(buildCitationChips('<p>no citations here</p>', ['unused'])).toBe(
       '<p>no citations here</p>',
     );
+  });
+
+  it('does not splice a chip into an attribute when the placeholder survived inside a tag', () => {
+    // A model that writes `[x](⟦cite:…⟧)` puts the placeholder in the href.
+    // Substituting there would tear the anchor apart.
+    const html = buildCitationChips('<a href="⟦kuai-cite:0⟧">x</a>', ['p']);
+    expect(html).toBe('<a href="⟦kuai-cite:0⟧">x</a>');
+    expect(html).not.toContain('data-cite-phrase');
+  });
+
+  it('still replaces placeholders that sit in text next to a tag', () => {
+    const html = buildCitationChips('<p>a ⟦kuai-cite:0⟧ <b>b</b></p>', ['p']);
+    expect(html).toContain('data-cite-phrase="p"');
+    expect(html).toContain('<b>b</b>');
+  });
+});
+
+// The renderer is the only thing standing between page-influenced model output
+// and `dangerouslySetInnerHTML`, so the escaping and link/image policies are
+// pinned against the real `marked` instead of a re-implementation of it.
+describe('renderMarkdownToHtml', () => {
+  it('escapes an HTML alt text instead of injecting it (image alt XSS regression)', async () => {
+    const html = await renderMarkdownToHtml(
+      '![<img src=x onerror=alert(1)>](javascript:alert(1))',
+    );
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+  });
+
+  it('never emits an img, even for a safe absolute URL', async () => {
+    const html = await renderMarkdownToHtml('![a diagram](https://example.com/a.png)');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('a diagram');
+  });
+
+  it('escapes raw HTML blocks and inline HTML', async () => {
+    expect(await renderMarkdownToHtml('<img src=x onerror=alert(1)>')).toContain(
+      '&lt;img src=x onerror=alert(1)&gt;',
+    );
+    expect(await renderMarkdownToHtml('a <b onclick="x">b</b> c')).not.toContain('<b onclick');
+  });
+
+  it('keeps the protocol whitelist for links and neutralises javascript:', async () => {
+    const safe = await renderMarkdownToHtml('[ok](https://example.com)');
+    expect(safe).toContain('href="https://example.com"');
+    expect(safe).toContain('rel="noopener noreferrer"');
+
+    const unsafe = await renderMarkdownToHtml('[bad](javascript:alert(1))');
+    expect(unsafe).toContain('href="#"');
+    expect(unsafe).not.toContain('javascript:');
+  });
+
+  it('renders citation chips for markers in the model output', async () => {
+    const html = await renderMarkdownToHtml('要点 ⟦cite:原文短句⟧');
+    expect(html).toContain('class="kuai-cite"');
+    expect(html).toContain('data-cite-phrase="原文短句"');
   });
 });
 

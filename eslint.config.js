@@ -10,7 +10,17 @@ import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
   {
-    ignores: ['.wxt/**', '.output/**', 'node_modules/**', 'stats.html'],
+    // `next/` is a leftover build directory from an abandoned branch and
+    // `release/` holds archived zips; neither is source, and linting them only
+    // slows the run down (and would pick up any stray .ts file inside).
+    ignores: [
+      '.wxt/**',
+      '.output/**',
+      'node_modules/**',
+      'next/**',
+      'release/**',
+      'stats.html',
+    ],
   },
   {
     files: ['**/*.{ts,tsx}'],
@@ -25,10 +35,14 @@ export default tseslint.config(
       '@typescript-eslint': tseslint.plugin,
     },
     rules: {
+      // Both rules are errors rather than warnings: the gate has to fail, or a
+      // stale-closure regression (the 1.5.1 "summarize button does nothing"
+      // bug) ships again. The codebase was already clean when they were
+      // promoted.
       'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
+      'react-hooks/exhaustive-deps': 'error',
       '@typescript-eslint/no-unused-vars': [
-        'warn',
+        'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none', ignoreRestSiblings: true },
       ],
     },

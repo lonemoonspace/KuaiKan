@@ -23,6 +23,8 @@ async function mountSummaryBadge(ctx: ContentScriptContext) {
     return;
   }
 
+  let host: HTMLElement | null = null;
+
   const ui = await createShadowRootUi<Root>(ctx, {
     name: 'webpage-summary-entrance',
     position: 'overlay',
@@ -30,7 +32,8 @@ async function mountSummaryBadge(ctx: ContentScriptContext) {
     anchor: 'body',
     append: 'last',
     zIndex: 2147483647,
-    onMount(container) {
+    onMount(container, _shadow, shadowHost) {
+      host = shadowHost;
       const root = createRoot(container);
       root.render(createElement(ContentEntrance, { ctx }));
       return root;
@@ -41,6 +44,24 @@ async function mountSummaryBadge(ctx: ContentScriptContext) {
   });
 
   ui.mount();
+
+  // The host is an ordinary child of <body>, so a page that clears or rebuilds
+  // its body takes the panel with it — previously it stayed gone until the page
+  // was reloaded. Watch for that and mount again from scratch; `remove()` first,
+  // because a bare `mount()` would attach a second React root to the container
+  // that still holds one.
+  if (typeof MutationObserver !== 'undefined' && ctx.isValid) {
+    const observer = new MutationObserver(() => {
+      if (!ctx.isValid || host?.isConnected) return;
+      ui.remove();
+      ui.mount();
+    });
+
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    // WXT removes the UI itself when the context is invalidated; without this
+    // the observer would immediately resurrect a dead panel.
+    ctx.onInvalidated(() => observer.disconnect());
+  }
 }
 
 export async function mountContentScope(ctx: ContentScriptContext) {
@@ -52,7 +73,7 @@ export async function mountContentScope(ctx: ContentScriptContext) {
     logger.error('[ContentScope] Failed to mount summary badge', e);
   }
 
-  onMessage('ping', () => {
+  const unbindPing = onMessage('ping', () => {
     return Promise.resolve({
       ok: true,
       title: document.title || messages.content.untitledPage,
@@ -61,7 +82,7 @@ export async function mountContentScope(ctx: ContentScriptContext) {
     });
   });
 
-  onMessage('extractText', async () => {
+  const unbindExtractText = onMessage('extractText', async () => {
     try {
       const settings = await loadGeneralSettings();
       const extracted = parsePageContent(settings.pageTextExtractMethod, document);
@@ -75,5 +96,13 @@ export async function mountContentScope(ctx: ContentScriptContext) {
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
+  });
+
+  // These are runtime-level listeners that WXT does not own, so an invalidated
+  // context has to unbind them itself; otherwise a second injection into the
+  // same document leaves both handlers registered and the dead one can answer.
+  ctx.onInvalidated(() => {
+    unbindPing();
+    unbindExtractText();
   });
 }

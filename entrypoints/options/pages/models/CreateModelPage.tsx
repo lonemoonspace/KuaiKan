@@ -4,8 +4,8 @@ import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import {
   createEmptyModelDraft,
-  createModelConfig,
 } from '@/lib/model-settings-storage';
+import { sendMessage as sendExtMessage } from '@/lib/messaging';
 import { OptionsPageTitle } from '../OptionsPageTitle';
 import { ModelEditor } from './ModelEditor';
 
@@ -28,7 +28,9 @@ export function CreateModelPage() {
           setIsSaving(true);
 
           try {
-            await createModelConfig(draft);
+            // Created by the background worker: it owns the read-modify-write
+            // for this key, so a concurrent edit elsewhere cannot be lost.
+            await sendExtMessage('mutateModelSettings', { op: 'create', draft });
             toast.success('Model created.');
             navigate('/models');
           } finally {

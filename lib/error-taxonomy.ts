@@ -48,11 +48,17 @@ export function classifySummaryError(input: {
   ) {
     return { code: 'timeout', retryable: true };
   }
-  if (
-    lower.includes('access-control-allow-origin') ||
-    lower.includes('cors') ||
-    lower.includes('permission')
-  ) {
+  // Narrow on purpose. A provider body that merely contains the word
+  // "permission" (e.g. a 400 saying "no permission to access model X") used to
+  // land here and tell the user to check the extension's site access — the
+  // wrong place entirely. CORS markers are still decisive; a bare "permission"
+  // only counts when no HTTP status arrived, i.e. the request never got a
+  // response the provider could have worded.
+  const looksLikeCors =
+    lower.includes('access-control-allow-origin') || lower.includes('cors');
+  const looksLikeSitePermission =
+    input.status === undefined && lower.includes('permission');
+  if (looksLikeCors || looksLikeSitePermission) {
     return { code: 'permission', retryable: false };
   }
 
@@ -69,7 +75,11 @@ export function classifySummaryError(input: {
 const COPY: Record<Exclude<SummaryErrorCode, 'unknown'>, string> = {
   auth: 'API Key 无效或没有权限，请检查模型设置。',
   'rate-limit': '请求过于频繁，请稍后重试或更换模型。',
-  'model-not-found': '模型不存在，请检查模型配置中的模型 ID。',
+  // A 404 is the shape both a wrong model id and a wrong base URL path take
+  // (a base URL missing its `/v1`, or a Responses endpoint used as a base,
+  // answers 404 too), so the copy names both instead of sending the user to
+  // the model id alone.
+  'model-not-found': '请求返回 404：请检查模型 ID 与 Base URL 路径是否正确。',
   timeout: '请求超时，请重试。',
   permission: '请求被权限或 CORS 拦截，请检查扩展站点访问权限。',
   aborted: '已停止。',

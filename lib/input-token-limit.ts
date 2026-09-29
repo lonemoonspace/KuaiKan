@@ -21,7 +21,9 @@ export function getEffectiveInputTokenLimit(
     model.providerId === 'open-responses' ||
     model.providerId === 'openai-compatible';
 
+  // Never round the headroom down to zero: callers read 0 as "no limit", which
+  // would silently disable truncation for a model configured with a tiny budget.
   return isOpenAiLike
     ? model.maxInputTokens
-    : Math.floor(model.maxInputTokens * NON_OPENAI_SAFETY_FACTOR);
+    : Math.max(1, Math.floor(model.maxInputTokens * NON_OPENAI_SAFETY_FACTOR));
 }

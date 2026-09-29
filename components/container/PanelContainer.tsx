@@ -93,6 +93,46 @@ function UnifiedPanelRenderer({ children, storageKey }: { children: React.ReactN
     el.style.transform = 'none';
   }, [isFloatingLoaded, floatingState]);
 
+  // A position that was reachable when it was saved can end up outside the
+  // viewport once the window shrinks (the snapshot is in px and is reused
+  // across window sizes). The check above only runs when the snapshot is
+  // applied, so without this the panel became unreachable until a reload.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !isFloatingLoaded || !floatingState) return;
+
+    let frame = 0;
+    const keepReachable = () => {
+      frame = 0;
+
+      const maxWidth = document.documentElement.clientWidth;
+      const maxHeight = document.documentElement.clientHeight;
+
+      if (el.offsetWidth > maxWidth) el.style.width = `${maxWidth}px`;
+      if (el.offsetHeight > maxHeight) el.style.height = `${maxHeight}px`;
+
+      if (isHeaderReachable(el)) return;
+
+      el.style.left = '';
+      el.style.top = '4em';
+      el.style.right = '4em';
+      el.style.bottom = '';
+    };
+
+    const handleResize = () => {
+      if (frame) return;
+      // rAF-coalesced: a resize drag fires this continuously.
+      frame = requestAnimationFrame(keepReachable);
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [isFloatingLoaded, floatingState]);
+
   if (!isFloatingLoaded) return null;
 
   return (

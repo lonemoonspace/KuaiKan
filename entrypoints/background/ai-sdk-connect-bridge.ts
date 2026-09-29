@@ -7,11 +7,16 @@ import {
   type AiSdkConnectBridgeServerMessage,
 } from '@/lib/ai-sdk-connect-bridge';
 import { createLanguageModelFromConfig } from '@/lib/model-provider';
+import { isTrustedSender } from '@/lib/background-trust';
 import { getModelConfigById } from '@/lib/model-settings-storage';
 import { classifySummaryError } from '@/lib/error-taxonomy';
 
 import { createLogger } from '@/lib/logger';
 import { SUMMARY_TIMING_ENABLED, timingNow } from '@/lib/summary-timing';
+import {
+  PROVIDER_IDLE_TIMEOUT_MS,
+  createIdleWatchdog,
+} from '@/lib/idle-timeout';
 import { serviceWorkerStartedAt, tokenizerLoadedAt } from './timing-bg';
 
 const logger = createLogger('background:ai-sdk-connect-bridge');
@@ -21,6 +26,13 @@ const logger = createLogger('background:ai-sdk-connect-bridge');
 export function registerAiSdkConnectBridge() {
   browser.runtime.onConnect.addListener((port) => {
     if (port.name !== AI_SDK_CONNECT_BRIDGE_PORT) {
+      return;
+    }
+
+    // The port runs an LLM request with the user's key and a caller-supplied
+    // system prompt, so it accepts connections only from this extension.
+    if (!isTrustedSender(port.sender)) {
+      logger.warn('[AI SDK Bridge] Rejected a connection from an untrusted sender');
       return;
     }
 
@@ -79,7 +91,7 @@ export function registerAiSdkConnectBridge() {
       const timingMarks: Record<string, number> = { '后台收到请求': timingNow() };
       requestId = frame.requestId;
       logger.debug(`[AI SDK Bridge] Starting stream (requestId: ${requestId})`);
-      void streamMessages(frame, abortController.signal, postMessage, timingMarks).finally(
+      void streamMessages(frame, abortController, postMessage, timingMarks).finally(
         () => {
           logger.debug(`[AI SDK Bridge] Stream finished (requestId: ${requestId})`);
           finish();
@@ -94,16 +106,40 @@ export function registerAiSdkConnectBridge() {
 
 async function streamMessages(
   request: AiSdkConnectBridgeRequest,
-  abortSignal: AbortSignal,
+  controller: AbortController,
   postMessage: (message: AiSdkConnectBridgeServerMessage) => void,
   timingMarks: Record<string, number>,
 ) {
+  const abortSignal = controller.signal;
   // Development-build timing instrumentation, see lib/summary-timing.ts.
   const mark = (name: string) => {
     timingMarks[name] ??= timingNow();
   };
   let firstSent = false;
   let finalSent = false;
+  let streamFailed = false;
+
+  // A provider that accepts the connection and then goes quiet (wedged proxy,
+  // saturated local model, silently dropped packets) produces no error, no
+  // chunk and no disconnect: the panel would spin forever and the error
+  // taxonomy's timeout copy would be unreachable. The watchdog aborts the
+  // stream and reports a message the classifier maps to `timeout`.
+  const watchdog = createIdleWatchdog(PROVIDER_IDLE_TIMEOUT_MS, () => {
+    if (streamFailed || abortSignal.aborted) return;
+    streamFailed = true;
+    controller.abort();
+    postErrorFrame(
+      new Error(
+        `Request timed out: no response from the provider for ${Math.round(PROVIDER_IDLE_TIMEOUT_MS / 1000)}s.`,
+      ),
+      postMessage,
+    );
+  });
+  const send = (message: AiSdkConnectBridgeServerMessage) => {
+    watchdog.reset();
+    postMessage(message);
+  };
+
   const sendTiming = (final: boolean) => {
     if (!SUMMARY_TIMING_ENABLED) return;
     if (final ? finalSent : firstSent || finalSent) return;
@@ -111,10 +147,10 @@ async function streamMessages(
     else firstSent = true;
     const marks: Record<string, number> = { ...timingMarks, '后台 Service Worker 启动': serviceWorkerStartedAt };
     if (tokenizerLoadedAt !== null) marks['后台分词器加载完成'] = tokenizerLoadedAt;
-    postMessage({ type: 'timing', marks, final });
+    send({ type: 'timing', marks, final });
   };
 
-  let streamFailed = false;
+  watchdog.reset();
   try {
     logger.debug(`[AI SDK Bridge streamMessages] Fetching model config for id: ${request.modelConfigId}`);
     const modelConfig = await getModelConfigById(request.modelConfigId);
@@ -146,8 +182,8 @@ async function streamMessages(
           logger.debug('[AI SDK Bridge] streamText error ignored after abort.');
           return;
         }
-        logger.error('[AI SDK Bridge] streamText onError:', streamError);
-        postErrorFrame(streamError, postMessage);
+        logger.error('[AI SDK Bridge] streamText onError:', errorForLog(streamError));
+        postErrorFrame(streamError, send);
         // Only mark the stream as failed once the frame went out, so an
         // unexpected throw here can still be retried by the outer catch.
         streamFailed = true;
@@ -157,6 +193,10 @@ async function streamMessages(
     logger.debug(`[AI SDK Bridge streamMessages] streamText called, beginning iteration...`);
 
     let chunkCount = 0;
+    // The UI stream always emits `start` / `finish` bookkeeping frames, so a
+    // frame count can never distinguish "the model answered" from "the model
+    // returned nothing". Only real content counts.
+    let sawContent = false;
     for await (const chunk of result.toUIMessageStream({
       sendReasoning: true,
       messageMetadata: ({ part }) => {
@@ -185,7 +225,7 @@ async function streamMessages(
       if (processedChunk.type === 'error') {
         const anyChunk = processedChunk as any;
         const rawError: unknown = anyChunk.error ?? anyChunk.errorText;
-        logger.error('[AI SDK Bridge] Error chunk from UI stream:', rawError);
+        logger.error('[AI SDK Bridge] Error chunk from UI stream:', errorForLog(rawError));
         // The UI stream has already terminated: deliver one classified error
         // frame (keeping status/code when the original error object is
         // available) instead of forwarding the raw UI error chunk.
@@ -194,7 +234,7 @@ async function streamMessages(
             ? rawError
             : new Error(String(rawError ?? 'No output was generated by the model.'));
         streamFailed = true;
-        postErrorFrame(errorObject, postMessage);
+        postErrorFrame(errorObject, send);
         break;
       }
 
@@ -204,7 +244,14 @@ async function streamMessages(
       if (processedChunk.type === 'reasoning-delta') mark('后台收到首个推理片段');
       if (processedChunk.type === 'text-delta') mark('后台收到首个正文片段');
 
-      postMessage({
+      if (
+        (processedChunk.type === 'text-delta' && processedChunk.delta) ||
+        (processedChunk.type === 'reasoning-delta' && processedChunk.delta)
+      ) {
+        sawContent = true;
+      }
+
+      send({
         type: 'chunk',
         chunk: processedChunk,
       });
@@ -214,16 +261,18 @@ async function streamMessages(
     sendTiming(true);
 
     logger.debug(`[AI SDK Bridge streamMessages] Finished iterating stream. Total chunks: ${chunkCount}`);
-    if (!streamFailed && chunkCount === 0) {
-      // A provider stream that ends without emitting anything must not
-      // complete silently as if it succeeded.
-      logger.error('[AI SDK Bridge] Stream finished without any output chunk.');
+    if (!streamFailed && !sawContent) {
+      // A stream that produced neither text nor reasoning -- only the start /
+      // finish bookkeeping frames -- must not be reported as a successful
+      // summary: the panel would flip to "already summarized" with an empty
+      // message, hide the summarize button, and persist that empty message.
+      logger.error('[AI SDK Bridge] Stream finished without any content chunk.');
       streamFailed = true;
       if (!abortSignal.aborted) {
-        postErrorFrame(new Error('No output was generated by the model.'), postMessage);
+        postErrorFrame(new Error('No output was generated by the model.'), send);
       }
     } else if (!streamFailed) {
-      postMessage({ type: 'done' });
+      send({ type: 'done' });
     }
   } catch (error) {
     if (streamFailed) {
@@ -231,14 +280,42 @@ async function streamMessages(
       return;
     }
 
-    logger.error(`[AI SDK Bridge streamMessages] Error occurred:`, error);
+    logger.error(`[AI SDK Bridge streamMessages] Error occurred:`, errorForLog(error));
     if (abortSignal.aborted) {
       logger.debug(`[AI SDK Bridge streamMessages] Aborted, ignoring error.`);
       return;
     }
 
-    postErrorFrame(error, postMessage);
+    postErrorFrame(error, send);
+  } finally {
+    watchdog.dispose();
   }
+}
+
+/**
+ * Console-safe projection of whatever a provider threw.
+ *
+ * `APICallError` carries the whole request body (the rendered prompt, i.e. the
+ * page text) in `requestBodyValues` and the provider's raw response in
+ * `responseBody`; logging the error object would drop both into the service
+ * worker console. Only the identifying fields are kept.
+ */
+function errorForLog(error: unknown) {
+  const e = error as {
+    name?: string;
+    statusCode?: number;
+    status?: number;
+    message?: string;
+  };
+
+  return {
+    name: typeof e?.name === 'string' ? e.name : typeof error,
+    status: e?.statusCode ?? e?.status,
+    message:
+      typeof e?.message === 'string'
+        ? e.message.slice(0, 300)
+        : String(error).slice(0, 300),
+  };
 }
 
 function postErrorFrame(
@@ -302,8 +379,12 @@ function getErrorMessage(error: unknown): string {
       }
     }
 
-    // HTML or unparseable body — truncate to avoid flooding the error display.
-    if (rawBody) {
+    // Plain-text bodies (unparseable JSON) can still carry the provider's own
+    // wording, so a short slice is kept. HTML is skipped as the file comment
+    // promises: a Cloudflare/nginx error page is noise in the panel, and this
+    // message is the only path by which provider response bytes reach the
+    // content script.
+    if (rawBody && !rawBody.trimStart().startsWith('<')) {
       const truncated = rawBody.length > 300 ? rawBody.slice(0, 300) + '…' : rawBody;
       return `[HTTP ${status}] ${truncated}`;
     }

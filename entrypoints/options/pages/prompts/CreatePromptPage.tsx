@@ -7,7 +7,7 @@ import {
   type PromptDraft,
 } from '@/constants/prompt-settings';
 import { getUiMessages } from '@/lib/i18n';
-import { createPrompt } from '@/lib/prompt-settings-storage';
+import { sendMessage as sendExtMessage } from '@/lib/messaging';
 import { OptionsPageTitle } from '../OptionsPageTitle';
 import { PromptEditor } from './PromptEditor';
 
@@ -33,13 +33,17 @@ export function CreatePromptPage() {
     setIsSaving(true);
 
     try {
-      await createPrompt(draft);
+      // Created by the background worker, the single writer for this key.
+      await sendExtMessage('mutatePromptSettings', { op: 'create', draft });
       toast.success(messages.prompts.createdToast);
       navigate('/prompts');
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : messages.prompts.saveFailed,
       );
+      // Rethrown so the editor can re-arm its unsaved-changes guard; the toast
+      // above is the user-facing report.
+      throw error;
     } finally {
       setIsSaving(false);
     }

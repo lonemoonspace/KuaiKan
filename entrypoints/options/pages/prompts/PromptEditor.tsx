@@ -1,11 +1,12 @@
 import { Save } from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   PROMPT_TEMPLATE_VARIABLES,
   type PromptDraft,
 } from '@/constants/prompt-settings';
 import { getUiMessages } from '@/lib/i18n';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 
 type PromptEditorProps = {
   initialDraft: PromptDraft;
@@ -23,13 +24,37 @@ export function PromptEditor({
   const messages = getUiMessages();
   const [draft, setDraft] = useState(initialDraft);
 
+  // Set before the save round trip so the navigation a successful save performs
+  // is not intercepted by the unsaved-changes guard; reset when the save throws
+  // (the page has already surfaced the error).
+  const savedRef = useRef(false);
+
+  useUnsavedChangesGuard(
+    () =>
+      !savedRef.current &&
+      (draft.name !== initialDraft.name ||
+        draft.systemMessage !== initialDraft.systemMessage ||
+        draft.userMessage !== initialDraft.userMessage),
+    messages.common.confirmLeaveUnsaved,
+  );
+
   useEffect(() => {
     setDraft(initialDraft);
+    savedRef.current = false;
   }, [initialDraft]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onSubmit(draft);
+
+    savedRef.current = true;
+
+    try {
+      await onSubmit(draft);
+    } catch {
+      // The page already showed the failure; re-arm the guard because the edits
+      // are still unsaved.
+      savedRef.current = false;
+    }
   }
 
   function updateDraft<Key extends keyof PromptDraft>(

@@ -375,7 +375,7 @@ export function domHeuristicParseRead(sourceDocument: Document = document) {
     const body = sourceDocument.body;
 
     if (!body) {
-      return toWebpageContent(sourceDocument, '', 'dom-heuristic');
+      return undefined;
     }
 
     const bodyText = getElementText(body);
@@ -386,11 +386,35 @@ export function domHeuristicParseRead(sourceDocument: Document = document) {
       }))
       .sort((left, right) => right.score - left.score)[0];
     const bestText = bestCandidate ? getElementText(bestCandidate.element) : '';
+    const text = bestText || bodyText;
 
-    return toWebpageContent(sourceDocument, bestText || bodyText, 'dom-heuristic');
+    // No text at all is "no content", not an empty article. Returning an empty
+    // `WebpageContent` here made the callers treat the page as extracted (and
+    // cache it), so the summary went out with an empty `{{textContent}}`.
+    if (!text) return undefined;
+
+    return toWebpageContent(sourceDocument, text, 'dom-heuristic');
   } finally {
     textCache = null;
   }
+}
+
+/**
+ * Choose between the two strategies' results.
+ *
+ * A result whose `textContent` is empty carries no article: returning it would
+ * make the callers treat the page as extracted (caching it, then sending an
+ * empty `{{textContent}}` to the model), so "nothing usable" is reported as
+ * `undefined` instead. Exported for tests, which cannot construct a Document
+ * but can pin this decision.
+ */
+export function pickExtraction(
+  primary: WebpageContent | undefined,
+  fallback: WebpageContent | undefined,
+): WebpageContent | undefined {
+  if (primary?.textContent) return primary;
+  if (fallback?.textContent) return fallback;
+  return undefined;
 }
 
 export function parsePageContent(
@@ -403,9 +427,5 @@ export function parsePageContent(
   const primary = extractMethod === 'dom-heuristic' ? domHeuristicParseRead : readabilityParseRead;
   const fallback = extractMethod === 'dom-heuristic' ? readabilityParseRead : domHeuristicParseRead;
 
-  const primaryResult = primary(sourceDocument);
-  if (primaryResult?.textContent) return primaryResult;
-
-  const fallbackResult = fallback(sourceDocument);
-  return fallbackResult?.textContent ? fallbackResult : primaryResult;
+  return pickExtraction(primary(sourceDocument), fallback(sourceDocument));
 }

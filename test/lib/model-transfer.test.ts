@@ -92,7 +92,7 @@ describe('mergeImportedModels', () => {
 
 describe('parseModelExportFile', () => {
   it('accepts the format this module writes', () => {
-    const file = buildModelExportFile(local, 'm1', '2.3.0');
+    const file = buildModelExportFile(local, 'm1', '2.3.0', { includeSecrets: true });
 
     const parsed = parseModelExportFile(JSON.parse(JSON.stringify(file)));
 
@@ -120,10 +120,44 @@ describe('parseModelExportFile', () => {
     expect(parsed.defaultModelId).toBeNull();
   });
 
+  it('accepts V1 rows (providerType/modelName) from a pre-migration backup', () => {
+    // The legacy export path exists to rescue exactly these rows, so they must
+    // survive the same validation the write path applies.
+    const parsed = parseModelExportFile({
+      name: 'kuai-kan',
+      data: {
+        'model-configs': [
+          {
+            id: 'legacy-1',
+            name: 'DeepSeek',
+            providerType: 'deepseek',
+            modelName: 'deepseek-chat',
+            apiKey: 'sk-legacy',
+          },
+        ],
+      },
+    });
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.models).toHaveLength(1);
+    expect(parsed.models[0].modelId).toBe('deepseek-chat');
+    expect(parsed.models[0].providerId).toBe('openai-compatible');
+  });
+
   it('rejects a file with no usable model list', () => {
     expect(parseModelExportFile(null).ok).toBe(false);
     expect(parseModelExportFile({ hello: 'world' }).ok).toBe(false);
     expect(parseModelExportFile({ type: 'kuai-kan-models', models: [] }).ok).toBe(false);
+  });
+
+  it('rejects rows the storage layer would refuse, instead of counting them as imported', () => {
+    const parsed = parseModelExportFile({
+      type: 'kuai-kan-models',
+      models: [{ id: 'x', name: 'Unknown provider', modelId: 'm', providerId: 'not-a-provider' }],
+    });
+
+    expect(parsed.ok).toBe(false);
   });
 
   it('drops rows that are not model configs', () => {
@@ -139,12 +173,22 @@ describe('parseModelExportFile', () => {
 });
 
 describe('buildModelExportFile', () => {
-  it('includes credentials and hands out copies, not the rendered rows', () => {
+  it('leaves credentials out by default and hands out copies, not the rendered rows', () => {
     const file = buildModelExportFile(local, null);
 
-    expect(file.models[0].apiKey).toBe('local-secret');
+    expect(file.models[0].apiKey).toBe('');
+    expect(file.models[0].headers).toEqual({});
     expect(file.models[0]).not.toBe(local[0]);
     expect(file.type).toBe('kuai-kan-models');
     expect(file.defaultModelId).toBeNull();
+    // The source rows are untouched.
+    expect(local[0].apiKey).toBe('local-secret');
+  });
+
+  it('includes credentials only when explicitly asked to', () => {
+    const file = buildModelExportFile(local, null, '3.1.1', { includeSecrets: true });
+
+    expect(file.models[0].apiKey).toBe('local-secret');
+    expect(file.models[0].headers).toEqual({ 'x-local': '1' });
   });
 });

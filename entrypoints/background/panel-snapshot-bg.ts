@@ -1,6 +1,7 @@
 import { storage } from '#imports';
 import { browser } from 'wxt/browser';
 import { onMessage } from '@/lib/messaging';
+import { isTrustedSender } from '@/lib/background-trust';
 import {
   applyPanelSnapshotPatch,
   getPanelSnapshotStorageKey,
@@ -29,6 +30,8 @@ export function registerPanelSnapshotMessages() {
     (await storage.getItem<PanelSnapshotMap>(getPanelSnapshotStorageKey(tabId))) ?? {};
 
   onMessage('loadPanelSnapshot', ({ data, sender }) => {
+    if (!isTrustedSender(sender)) return null;
+
     const tabId = sender.tab?.id;
     if (tabId === undefined) return null;
 
@@ -36,6 +39,8 @@ export function registerPanelSnapshotMessages() {
   });
 
   onMessage('savePanelSnapshot', ({ data, sender }) => {
+    if (!isTrustedSender(sender)) return;
+
     const tabId = sender.tab?.id;
     if (tabId === undefined) return;
 

@@ -3,7 +3,6 @@ import type { WebpageContent } from '@/lib/page-extraction';
 type PageSignature = { length: number; headHash: number; tailHash: number };
 
 type CacheEntry = {
-  href: string;
   content: WebpageContent;
   tokenCount: number | null;
   signature: PageSignature;
@@ -74,7 +73,6 @@ export function cachePageContent(href: string, content: WebpageContent): void {
     cache.delete(oldest);
   }
   cache.set(href, {
-    href,
     content,
     tokenCount: null,
     signature: readSignature(),

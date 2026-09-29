@@ -87,6 +87,13 @@ export function __setMockPortFactory(factory: () => MockPort) {
   portFactory = factory;
 }
 
+let failNextRemove = false;
+
+/** Make the next `storage.local.remove()` reject, for failure-path tests. */
+export function __failNextStorageRemove() {
+  failNextRemove = true;
+}
+
 export const browser = {
   storage: {
     local: {
@@ -103,6 +110,11 @@ export const browser = {
         store = { ...store, ...items };
       },
       remove: async (keys: string | string[]): Promise<void> => {
+        if (failNextRemove) {
+          failNextRemove = false;
+          throw new Error('mock storage remove failed');
+        }
+
         const keyList = Array.isArray(keys) ? keys : [keys];
         for (const key of keyList) {
           delete store[key];

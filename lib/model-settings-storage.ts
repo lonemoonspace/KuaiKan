@@ -7,6 +7,7 @@ import {
   getModelProviderDefinition,
   isModelApiMode,
   isModelProviderId,
+  normalizeOllamaBaseURL,
   type ModelConfigItem,
   type ModelDraft,
 } from '@/constants/model-settings';
@@ -100,6 +101,21 @@ function isModelConfigItem(value: unknown): value is ModelConfigItem {
   );
 }
 
+function normalizeBaseURL(
+  providerId: ModelConfigItem['providerId'],
+  provider: { supportsBaseURL: boolean; defaultBaseURL: string },
+  value: unknown,
+) {
+  if (!provider.supportsBaseURL) return '';
+
+  const baseURL = cleanString(value) || provider.defaultBaseURL;
+
+  // Ollama's row moved from the native `/api` to the OpenAI-compatible `/v1`
+  // (see normalizeOllamaBaseURL), so a base URL stored by an earlier version is
+  // rewritten on load and persisted as `/v1` on the next write.
+  return providerId === 'ollama' ? normalizeOllamaBaseURL(baseURL) : baseURL;
+}
+
 function normalizeModel(value: ModelConfigItem): ModelConfigItem | null {
   const provider = getModelProviderDefinition(value.providerId);
   const name = cleanString(value.name);
@@ -113,9 +129,7 @@ function normalizeModel(value: ModelConfigItem): ModelConfigItem | null {
     apiKey: cleanString(value.apiKey),
     apiMode: normalizeApiMode(value.apiMode, value.providerId),
     at: typeof value.at === 'number' ? value.at : Date.now(),
-    baseURL: provider.supportsBaseURL
-      ? cleanString(value.baseURL) || provider.defaultBaseURL
-      : '',
+    baseURL: normalizeBaseURL(value.providerId, provider, value.baseURL),
     extraBody: cleanExtraBody(value.extraBody),
     headers: cleanHeaders(value.headers),
     iconPath: cleanString(value.iconPath),
@@ -131,32 +145,62 @@ function normalizeModel(value: ModelConfigItem): ModelConfigItem | null {
   };
 }
 
-function parseModels(value: unknown) {
-  if (!Array.isArray(value)) return [];
+/**
+ * Split a stored list into the rows this version understands and everything
+ * else.
+ *
+ * Loaders are deliberately tolerant: a row written by a newer version, a
+ * hand-edited file, or a provider id that no longer exists is skipped with a
+ * warning rather than crashing the settings page. Writes must not turn that
+ * tolerance into deletion, so the unparsed rows travel with the write (see
+ * `writeModelSettings`) instead of being dropped on the floor.
+ */
+function splitModelRows(value: unknown): {
+  models: ModelConfigItem[];
+  unparsed: unknown[];
+} {
+  if (!Array.isArray(value)) return { models: [], unparsed: [] };
 
-  const result: ModelConfigItem[] = [];
+  const models: ModelConfigItem[] = [];
+  const unparsed: unknown[] = [];
+
   for (const item of value) {
     if (!isModelConfigItem(item)) {
       const record = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
-      logger.warn('[parseModels] Dropping stored model with invalid shape or unknown providerId', {
+      logger.warn('[parseModels] Keeping an unparsed model row with an invalid shape or unknown providerId', {
         id: typeof record.id === 'string' ? record.id : undefined,
         providerId: record.providerId,
       });
+      unparsed.push(item);
       continue;
     }
 
     const normalized = normalizeModel(item);
     if (!normalized) {
-      logger.warn('[parseModels] Dropping stored model missing a required field (name/modelId)', {
+      logger.warn('[parseModels] Keeping an unparsed model row missing a required field (name/modelId)', {
         id: item.id,
         providerId: item.providerId,
       });
+      unparsed.push(item);
       continue;
     }
 
-    result.push(normalized);
+    models.push(normalized);
   }
-  return result;
+
+  return { models, unparsed };
+}
+
+function parseModels(value: unknown) {
+  return splitModelRows(value).models;
+}
+
+/**
+ * The rows of an external list (an import file, a hand-edited backup) that this
+ * build can actually persist, validated by the same code the write path uses.
+ */
+export function filterPersistableModelRows(rows: unknown[]): ModelConfigItem[] {
+  return splitModelRows(rows).models;
 }
 
 function normalizeDefaultModelId(
@@ -186,9 +230,7 @@ function validateDraft(draft: ModelDraft): ModelDraft {
   const provider = getModelProviderDefinition(draft.providerId);
   const name = cleanString(draft.name);
   const modelId = cleanString(draft.modelId);
-  const baseURL = provider.supportsBaseURL
-    ? cleanString(draft.baseURL) || provider.defaultBaseURL
-    : '';
+  const baseURL = normalizeBaseURL(draft.providerId, provider, draft.baseURL);
 
   if (!name || !modelId) {
     throw new Error('Model name and model id are required.');
@@ -223,9 +265,7 @@ function normalizeFetchDraft(draft: ModelDraft) {
     throw new Error('This provider does not expose a configured models endpoint.');
   }
 
-  const baseURL = provider.supportsBaseURL
-    ? cleanString(draft.baseURL) || provider.defaultBaseURL
-    : '';
+  const baseURL = normalizeBaseURL(draft.providerId, provider, draft.baseURL);
 
   if (provider.supportsBaseURL && !baseURL) {
     throw new Error('Base URL is required.');
@@ -234,14 +274,54 @@ function normalizeFetchDraft(draft: ModelDraft) {
   return { baseURL, providerId: draft.providerId };
 }
 
-async function writeModelSettings(settings: ModelSettings) {
-  const models = parseModels(settings.models);
+/** Raw rows currently in storage that this version cannot parse. */
+async function readPreservedRows(): Promise<unknown[]> {
+  const raw = await storage.getItem<unknown>(MODEL_CONFIGS_V2_STORAGE_KEY);
+
+  return splitModelRows(raw).unparsed;
+}
+
+/** De-duplicate preserved rows (they are carried across writes verbatim). */
+function uniqueRows(rows: unknown[]): unknown[] {
+  const seen = new Set<string>();
+  const result: unknown[] = [];
+
+  for (const row of rows) {
+    let key: string;
+    try {
+      key = JSON.stringify(row) ?? String(row);
+    } catch {
+      key = String(row);
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(row);
+  }
+
+  return result;
+}
+
+export type ModelSettingsWriteResult = {
+  defaultModelId: string | null;
+  models: ModelConfigItem[];
+  /** Rows the caller supplied that this version cannot treat as a model. */
+  rejected: number;
+  /** Unparsed rows kept in storage (from this write and from before it). */
+  preserved: number;
+};
+
+async function writeModelSettings(settings: ModelSettings): Promise<ModelSettingsWriteResult> {
+  const { models, unparsed } = splitModelRows(settings.models);
+  // Anything this version cannot parse is written back untouched, after the
+  // managed rows. Without this, editing one model would silently delete a row
+  // an older/newer build wrote -- together with its API key.
+  const preserved = uniqueRows([...(await readPreservedRows()), ...unparsed]);
   const defaultModelId = normalizeDefaultModelId(settings.defaultModelId, models);
 
   await storage.setItems([
     {
       key: MODEL_CONFIGS_V2_STORAGE_KEY,
-      value: models,
+      value: [...models, ...preserved],
     },
     {
       key: DEFAULT_MODEL_ID_V2_STORAGE_KEY,
@@ -249,15 +329,23 @@ async function writeModelSettings(settings: ModelSettings) {
     },
   ]);
 
-  return { defaultModelId, models };
+  return { defaultModelId, models, rejected: unparsed.length, preserved: preserved.length };
 }
 
 /**
  * Replace the whole model list, e.g. when importing an exported file. Rows go
  * through the same normalization as every other write, so a hand-edited or
  * partially-shaped file cannot put data into storage the loader would drop.
+ *
+ * An import that parses to nothing is refused outright: the caller asked to
+ * replace the list, and wiping every model because the file was shaped
+ * differently than expected is not a useful outcome.
  */
 export async function replaceModelSettings(settings: ModelSettings) {
+  if (settings.models.length > 0 && splitModelRows(settings.models).models.length === 0) {
+    throw new Error('导入的模型配置都无法识别，已保留原有配置。');
+  }
+
   return writeModelSettings(settings);
 }
 

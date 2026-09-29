@@ -9,8 +9,13 @@ import { defineConfig } from 'vitest/config';
 // build pipeline.
 export default defineConfig({
   test: {
+    // `node` because the current suites are pure logic plus an in-memory
+    // storage stub; component tests would need jsdom/happy-dom added here.
     environment: 'node',
-    include: ['test/**/*.test.ts'],
+    // `.tsx` as well as `.ts`: tsconfig already type-checks both, and a `.tsx`
+    // suite that silently never ran was the worst kind of drift (green gate,
+    // zero coverage).
+    include: ['test/**/*.test.{ts,tsx}'],
   },
   resolve: {
     alias: {

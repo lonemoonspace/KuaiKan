@@ -15,6 +15,11 @@ stats-*.json
 .wxt
 web-ext.config.ts
 
+# Leftover build output of the abandoned `next` (v4) branch: generated files
+# with no source next to them (295MB before this was ignored).
+next/
+.freebuff/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -30,3 +35,6 @@ web-ext.config.ts
 
 # Release artifacts（如需本地归档不被 git 追踪，取消下一行注释）
 # release/
+# The zips are tracked on purpose (see AGENTS.md); the unpacked copies left
+# behind by the "verify the zip" release step are not source.
+release/**/kuai-kan-*-chrome/
