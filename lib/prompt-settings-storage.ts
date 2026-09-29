@@ -55,13 +55,36 @@ function normalizePrompt(value: PromptConfigItem): PromptConfigItem | null {
   };
 }
 
-function parsePrompts(value: unknown) {
-  if (!Array.isArray(value)) return [];
+/**
+ * See the model-side `splitModelRows`: loading is tolerant, and writes must not
+ * turn that tolerance into deletion, so unparsed rows are carried along instead
+ * of being dropped.
+ */
+function splitPromptRows(value: unknown): {
+  prompts: PromptConfigItem[];
+  unparsed: unknown[];
+} {
+  if (!Array.isArray(value)) return { prompts: [], unparsed: [] };
 
-  return value
-    .filter(isPromptConfigItem)
-    .map(normalizePrompt)
-    .filter((prompt): prompt is PromptConfigItem => prompt !== null);
+  const prompts: PromptConfigItem[] = [];
+  const unparsed: unknown[] = [];
+
+  for (const item of value) {
+    const normalized = isPromptConfigItem(item) ? normalizePrompt(item) : null;
+
+    if (!normalized) {
+      unparsed.push(item);
+      continue;
+    }
+
+    prompts.push(normalized);
+  }
+
+  return { prompts, unparsed };
+}
+
+function parsePrompts(value: unknown) {
+  return splitPromptRows(value).prompts;
 }
 
 function normalizeDraft(draft: PromptDraft): PromptDraft {
@@ -123,17 +146,52 @@ function normalizeDefaultPromptId(
     : prompts[0]?.id ?? null;
 }
 
-async function writePromptSettings(settings: PromptSettings) {
-  const prompts = parsePrompts(settings.prompts);
-  const defaultPromptId = normalizeDefaultPromptId(
-    settings.defaultPromptId,
-    prompts,
-  );
+/** Raw rows currently in storage that this version cannot parse. */
+async function readPreservedRows(): Promise<unknown[]> {
+  const raw = await storage.getItem<unknown>(PROMPT_CONFIG_STORAGE_KEY);
+
+  return splitPromptRows(raw).unparsed;
+}
+
+function uniqueRows(rows: unknown[]): unknown[] {
+  const seen = new Set<string>();
+  const result: unknown[] = [];
+
+  for (const row of rows) {
+    let key: string;
+    try {
+      key = JSON.stringify(row) ?? String(row);
+    } catch {
+      key = String(row);
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(row);
+  }
+
+  return result;
+}
+
+export type PromptSettingsWriteResult = {
+  defaultPromptId: string | null;
+  prompts: PromptConfigItem[];
+  /** Rows the caller supplied that this version cannot treat as a prompt. */
+  rejected: number;
+  /** Unparsed rows kept in storage (from this write and from before it). */
+  preserved: number;
+};
+
+async function writePromptSettings(
+  settings: PromptSettings,
+): Promise<PromptSettingsWriteResult> {
+  const { prompts, unparsed } = splitPromptRows(settings.prompts);
+  const preserved = uniqueRows([...(await readPreservedRows()), ...unparsed]);
+  const defaultPromptId = normalizeDefaultPromptId(settings.defaultPromptId, prompts);
 
   await storage.setItems([
     {
       key: PROMPT_CONFIG_STORAGE_KEY,
-      value: prompts,
+      value: [...prompts, ...preserved],
     },
     {
       key: DEFAULT_PROMPT_ID_STORAGE_KEY,
@@ -141,7 +199,7 @@ async function writePromptSettings(settings: PromptSettings) {
     },
   ]);
 
-  return { defaultPromptId, prompts };
+  return { defaultPromptId, prompts, rejected: unparsed.length, preserved: preserved.length };
 }
 
 export async function loadPromptSettings(): Promise<PromptSettings> {
@@ -263,11 +321,17 @@ export async function setDefaultPrompt(id: string) {
   return true;
 }
 
-export async function ensureSamplePrompt() {
-  const settings = await loadPromptSettings();
+/**
+ * Seed the library with the sample prompt when it is empty.
+ *
+ * `knownPrompts` lets a caller that has just loaded the list pass it in, so the
+ * seeding path does not read the same key twice for no reason.
+ */
+export async function ensureSamplePrompt(knownPrompts?: PromptConfigItem[]) {
+  const prompts = knownPrompts ?? (await loadPromptSettings()).prompts;
 
-  if (settings.prompts.length > 0) {
-    return settings.prompts[0];
+  if (prompts.length > 0) {
+    return prompts[0];
   }
 
   const preset = getPromptPreset('basic');
@@ -291,7 +355,7 @@ async function seedPromptLibraryOnce(): Promise<PromptConfigItem | null> {
   }
 
   const settings = await loadPromptSettings();
-  const prompt = settings.prompts[0] ?? (await ensureSamplePrompt());
+  const prompt = settings.prompts[0] ?? (await ensureSamplePrompt(settings.prompts));
 
   await storage.setItem(PROMPT_LIBRARY_SEEDED_STORAGE_KEY, true);
 

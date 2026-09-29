@@ -8,7 +8,7 @@ import {
   Save,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,11 +22,12 @@ import {
   AVAILABLE_ICONS,
   MODEL_PROVIDER_DEFINITIONS,
   createDefaultModelDraft,
-  getModelDisplayIcon,
   getModelProviderDefinition,
   type ModelDraft,
   type ModelProviderId,
 } from '@/constants/model-settings';
+import { resolveModelIconUrl } from '@/lib/model-icon';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import {
   fetchRemoteModels,
   type RemoteModelInfo,
@@ -54,7 +55,19 @@ function stringifyJson(value: Record<string, unknown> | Record<string, string>) 
   return Object.keys(value).length ? JSON.stringify(value, null, 2) : '';
 }
 
-function parseJsonObject(value: string, label: string) {
+/**
+ * Parse a JSON-object text field.
+ *
+ * `stringValuesOnly` is used for headers: the storage layer drops any header
+ * whose value is not a string, so saving `{"X-Foo": 1}` used to report success
+ * while the header silently disappeared. Rejecting it at the form is the only
+ * way the user finds out.
+ */
+function parseJsonObject(
+  value: string,
+  label: string,
+  options: { stringValuesOnly?: boolean } = {},
+) {
   const text = value.trim();
 
   if (!text) return {};
@@ -65,6 +78,16 @@ function parseJsonObject(value: string, label: string) {
     throw new Error(`${label} must be a JSON object.`);
   }
 
+  if (options.stringValuesOnly) {
+    const notAString = Object.entries(parsed as Record<string, unknown>).find(
+      ([, headerValue]) => typeof headerValue !== 'string',
+    );
+
+    if (notAString) {
+      throw new Error(`${label}: the value of "${notAString[0]}" must be a string.`);
+    }
+  }
+
   return parsed as Record<string, unknown>;
 }
 
@@ -72,10 +95,6 @@ function parseNumberInput(value: string) {
   const numberValue = Number(value);
 
   return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : 0;
-}
-
-function numberInputValue(value: number) {
-  return value > 0 ? value : '';
 }
 
 export function ModelEditor({
@@ -104,6 +123,20 @@ export function ModelEditor({
   );
 
   const isPooledModelId = draft.modelIds.includes(draft.modelId);
+
+  // Set before the save round trip so the navigation a successful save performs
+  // is not intercepted by the unsaved-changes guard; reset on failure, when the
+  // edits really are still unsaved.
+  const savedRef = useRef(false);
+
+  useUnsavedChangesGuard(
+    () =>
+      !savedRef.current &&
+      (JSON.stringify(draft) !== JSON.stringify(initialDraft) ||
+        headersText !== stringifyJson(initialDraft.headers) ||
+        extraBodyText !== stringifyJson(initialDraft.extraBody)),
+    messages.common.confirmLeaveUnsaved,
+  );
 
   useEffect(() => {
     setDraft(initialDraft);
@@ -159,7 +192,9 @@ export function ModelEditor({
       const models = await fetchRemoteModels({
         ...draft,
         extraBody: parseJsonObject(extraBodyText, 'Extra body'),
-        headers: parseJsonObject(headersText, 'Headers') as Record<string, string>,
+        headers: parseJsonObject(headersText, 'Headers', {
+          stringValuesOnly: true,
+        }) as Record<string, string>,
       });
 
       setRemoteModels(models);
@@ -198,13 +233,18 @@ export function ModelEditor({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    savedRef.current = true;
+
     try {
       await onSubmit({
         ...draft,
         extraBody: parseJsonObject(extraBodyText, 'Extra body'),
-        headers: parseJsonObject(headersText, 'Headers') as Record<string, string>,
+        headers: parseJsonObject(headersText, 'Headers', {
+          stringValuesOnly: true,
+        }) as Record<string, string>,
       });
     } catch (error) {
+      savedRef.current = false;
       toast.error(error instanceof Error ? error.message : 'Model failed to save.');
     }
   }
@@ -260,7 +300,7 @@ export function ModelEditor({
               <img
                 alt=""
                 className="max-h-7 max-w-24 shrink-0 object-contain"
-                src={getModelDisplayIcon(draft)}
+                src={resolveModelIconUrl(draft)}
                 title={provider.desc}
               />
               <span className="min-w-0 text-lg font-semibold leading-7">
@@ -293,7 +333,7 @@ export function ModelEditor({
                     <img
                       alt=""
                       className="size-5 object-contain"
-                      src={getModelDisplayIcon(draft)}
+                      src={resolveModelIconUrl(draft)}
                     />
                   </button>
                 </DialogTrigger>
@@ -694,17 +734,47 @@ function NumberField({
   step?: string;
   value: number;
 }) {
+  // The input owns its text while the user types. Deriving it from the number
+  // on every render (`value > 0 ? value : ''`) made the field clear itself the
+  // moment a leading `0` was typed -- so `0.000001` was impossible to enter --
+  // and made "0" indistinguishable from "not set".
+  const [text, setText] = useState(value > 0 ? String(value) : '');
+  // The last value this component published, so a prop change that came from
+  // our own onChange does not fight the text the user is typing.
+  const publishedRef = useRef(value);
+
+  useEffect(() => {
+    if (value === publishedRef.current) return;
+
+    publishedRef.current = value;
+    setText(value > 0 ? String(value) : '');
+  }, [value]);
+
+  const handleChange = (next: string) => {
+    setText(next);
+
+    const normalized = parseNumberInput(next);
+    publishedRef.current = normalized;
+    onChange(normalized);
+  };
+
+  const isInvalid = text.trim() !== '' && !Number.isFinite(Number(text));
+
   return (
     <label className="grid gap-2">
       <FieldLabel optional={optional}>{label}</FieldLabel>
       <input
-        className="h-9 rounded-md border bg-background px-3 text-sm shadow-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        aria-invalid={isInvalid || undefined}
+        className={cn(
+          'h-9 rounded-md border bg-background px-3 text-sm shadow-sm outline-none focus-visible:ring-1 focus-visible:ring-ring',
+          isInvalid && 'border-destructive',
+        )}
         min="0"
-        onChange={(event) => onChange(parseNumberInput(event.currentTarget.value))}
+        onChange={(event) => handleChange(event.currentTarget.value)}
         placeholder="Default"
         step={step}
         type="number"
-        value={numberInputValue(value)}
+        value={text}
       />
     </label>
   );

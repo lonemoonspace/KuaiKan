@@ -4,12 +4,14 @@ import {
   seedPromptLibraryInBackground,
 } from '@/lib/prompt-settings-storage';
 import { onMessage } from '@/lib/messaging';
+import { isTrustedSender } from '@/lib/background-trust';
 import { registerAiSdkConnectBridge } from './ai-sdk-connect-bridge';
 import { registerTokenCountMessages } from './token-count-bg';
 import { setupOnInstallHook } from './onInstall';
 import { registerControlMessages, addContextMenus, initializeControlHandlers } from './control';
 import { setupCorsFixRule } from './cors-fix';
 import { registerPanelSnapshotMessages } from './panel-snapshot-bg';
+import { registerSettingsMutationMessages } from './settings-mutations-bg';
 
 import { createLogger } from '@/lib/logger';
 
@@ -28,7 +30,9 @@ export default defineBackground(() => {
   // so the check-then-create sequence can never race across contexts. Failures
   // resolve (not reject) so one transient storage error can't dead-init the
   // caller's panel/popup.
-  onMessage('seedPromptLibrary', async () => {
+  onMessage('seedPromptLibrary', async (msg) => {
+    if (!isTrustedSender(msg.sender)) return { seeded: false };
+
     try {
       const prompt = await seedPromptLibraryInBackground();
       return { seeded: prompt !== null };
@@ -44,6 +48,7 @@ export default defineBackground(() => {
   registerAiSdkConnectBridge();
   registerTokenCountMessages();
   registerPanelSnapshotMessages();
+  registerSettingsMutationMessages();
   registerControlMessages();
   addContextMenus().catch((err) => logger.error('Failed to setup context menus:', err));
   initializeControlHandlers();

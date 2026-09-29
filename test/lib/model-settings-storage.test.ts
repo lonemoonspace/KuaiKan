@@ -24,7 +24,7 @@ vi.mock('#imports', () => ({
     // parseModels() warn logging below), which calls storage.watch/getItem
     // at module load time; stub them like test/mocks/imports.ts does.
     watch: (_key: string, _callback: (newValue: unknown, oldValue: unknown) => void) => () => {},
-    getItem: async (_key: string) => null,
+    getItem: async (key: string) => (mockStore.has(key) ? mockStore.get(key) : null),
   },
 }));
 
@@ -36,6 +36,7 @@ import {
 import {
   extractRemoteModels,
   loadModelSettings,
+  replaceModelSettings,
   setModelConfigModelId,
   updateModelConfig,
 } from '@/lib/model-settings-storage';
@@ -251,5 +252,115 @@ describe('setModelConfigModelId', () => {
     const settings = await loadModelSettings();
 
     expect(settings.models[0].modelId).toBe('gpt-4o');
+  });
+});
+
+// The loader is tolerant by design: a row from a newer build, a hand-edited
+// backup or a provider id this version does not know is skipped with a warning.
+// A write used to turn that tolerance into deletion -- editing one model
+// dropped every row the loader could not parse, API key included.
+describe('unparsed rows survive a write', () => {
+  const UNKNOWN_PROVIDER_ROW = {
+    id: 'future-1',
+    name: 'From a newer version',
+    providerId: 'provider-that-does-not-exist-yet',
+    modelId: 'future-model',
+    apiKey: 'sk-must-not-be-deleted',
+  };
+
+  beforeEach(() => {
+    mockStore.clear();
+  });
+
+  it('keeps an unknown-provider row when another model is edited', async () => {
+    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [
+      { ...LEGACY_BASE },
+      { ...UNKNOWN_PROVIDER_ROW },
+    ]);
+
+    await updateModelConfig('m1', {
+      ...createDefaultModelDraft('openai-compatible'),
+      baseURL: 'https://api.example.com/v1',
+      modelId: 'gpt-4o-mini',
+      name: 'Renamed',
+    });
+
+    const raw = mockStore.get(MODEL_CONFIGS_V2_STORAGE_KEY) as unknown[];
+
+    expect(raw).toHaveLength(2);
+    expect(raw).toContainEqual(UNKNOWN_PROVIDER_ROW);
+    // The managed row is still first; the unparsed one is carried at the end.
+    expect((raw[0] as { id: string }).id).toBe('m1');
+  });
+
+  it('keeps an unknown-provider row when a model is deleted', async () => {
+    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [
+      { ...LEGACY_BASE },
+      { ...LEGACY_BASE, id: 'm2', name: 'Second' },
+      { ...UNKNOWN_PROVIDER_ROW },
+    ]);
+
+    const { deleteModelConfig } = await import('@/lib/model-settings-storage');
+    expect(await deleteModelConfig('m2')).toBe(true);
+
+    const raw = mockStore.get(MODEL_CONFIGS_V2_STORAGE_KEY) as unknown[];
+
+    expect(raw).toHaveLength(2);
+    expect(raw).toContainEqual(UNKNOWN_PROVIDER_ROW);
+  });
+
+  it('carries an unparsed row supplied by an import instead of dropping it', async () => {
+    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [{ ...LEGACY_BASE }]);
+
+    const result = await replaceModelSettings({
+      defaultModelId: 'm1',
+      models: [
+        { ...LEGACY_BASE, modelIds: [] },
+        UNKNOWN_PROVIDER_ROW as never,
+      ],
+    });
+
+    expect(result.models).toHaveLength(1);
+    expect(result.rejected).toBe(1);
+    expect(mockStore.get(MODEL_CONFIGS_V2_STORAGE_KEY)).toContainEqual(
+      UNKNOWN_PROVIDER_ROW,
+    );
+  });
+
+  it('refuses an import that parses to nothing instead of wiping the list', async () => {
+    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [{ ...LEGACY_BASE }]);
+
+    await expect(
+      replaceModelSettings({
+        defaultModelId: null,
+        models: [
+          { id: 'x', name: 'y', modelId: 'z', providerId: 'nope' } as never,
+        ],
+      }),
+    ).rejects.toThrow();
+
+    // Storage is untouched: the user's models are still there.
+    expect(mockStore.get(MODEL_CONFIGS_V2_STORAGE_KEY)).toEqual([{ ...LEGACY_BASE }]);
+  });
+});
+
+describe('legacy ollama base URLs', () => {
+  beforeEach(() => {
+    mockStore.clear();
+  });
+
+  it('rewrites a stored /api base URL to the OpenAI-compatible /v1 on load', async () => {
+    mockStore.set(MODEL_CONFIGS_V2_STORAGE_KEY, [
+      {
+        ...LEGACY_BASE,
+        providerId: 'ollama',
+        baseURL: 'http://localhost:11434/api',
+        modelId: 'llama3.2',
+      },
+    ]);
+
+    const settings = await loadModelSettings();
+
+    expect(settings.models[0].baseURL).toBe('http://localhost:11434/v1');
   });
 });

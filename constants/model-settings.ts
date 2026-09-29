@@ -208,16 +208,16 @@ export const MODEL_PROVIDER_DEFINITIONS: {
   },
   {
     baseURLPresets: [
-      { label: 'Ollama Native', url: 'http://localhost:11434/api', iconPath: '/llm-icons/ollama.svg' },
+      { label: 'Ollama (OpenAI 兼容)', url: 'http://localhost:11434/v1', iconPath: '/llm-icons/ollama.svg' },
     ],
-    defaultBaseURL: 'http://localhost:11434/api',
+    defaultBaseURL: 'http://localhost:11434/v1',
     defaultModelId: 'llama3.2',
-    desc: 'Local Ollama native API provider.',
-    docsUrl: 'https://ai-sdk.dev/providers/community-providers/ollama',
+    desc: 'Local Ollama through its OpenAI-compatible /v1 endpoint. A base URL saved as .../api from an earlier version is rewritten to /v1 automatically.',
+    docsUrl: 'https://github.com/ollama/ollama/blob/main/docs/openai.md',
     iconPath: '/llm-icons/ollama.svg',
     id: 'ollama',
     label: 'Ollama',
-    modelsPath: '/tags',
+    modelsPath: '/models',
     requiresApiKey: false,
     supportsApiMode: false,
     supportsBaseURL: true,
@@ -276,6 +276,28 @@ export type ModelConfigItem = {
 
 export type ModelDraft = Omit<ModelConfigItem, 'at' | 'id'>;
 
+/**
+ * A model config as the in-page panel is allowed to see it.
+ *
+ * The panel runs inside the page being summarized, in the content script's
+ * isolated world. It only needs to *describe* the configured models — the
+ * request itself is built in the background — so `apiKey`, `headers` and
+ * `extraBody` never have to enter that world. Keeping them out turns "the API
+ * key cannot leak through a content-script bug" into a structural property
+ * instead of a property that depends on the markdown pipeline escaping
+ * everything correctly.
+ */
+export type PublicModelConfigItem = Omit<
+  ModelConfigItem,
+  'apiKey' | 'headers' | 'extraBody'
+>;
+
+export function toPublicModelConfig(model: ModelConfigItem): PublicModelConfigItem {
+  const { apiKey: _apiKey, headers: _headers, extraBody: _extraBody, ...rest } = model;
+
+  return rest;
+}
+
 export function getModelProviderDefinition(providerId: ModelProviderId) {
   return (
     MODEL_PROVIDER_DEFINITIONS.find((provider) => provider.id === providerId) ??
@@ -285,6 +307,27 @@ export function getModelProviderDefinition(providerId: ModelProviderId) {
 
 export function isModelProviderId(value: unknown): value is ModelProviderId {
   return MODEL_PROVIDER_DEFINITIONS.some((provider) => provider.id === value);
+}
+
+/**
+ * Ollama serves an OpenAI-compatible API at `/v1` next to its native `/api`.
+ *
+ * The `ollama` provider row used to point at the native API and was implemented
+ * with `ollama-ai-provider`, which still declares specification version v1 —
+ * AI SDK 6 rejects those models at runtime, so every Ollama summary failed.
+ * The row is now served by the OpenAI-compatible client, which means a base URL
+ * saved as `http://host:port/api` has to be rewritten (Ollama's own OpenAI
+ * endpoint is documented as `/v1`). Pure and AI-SDK-free so the storage layer
+ * can normalize a loaded row without pulling provider code into the bundle.
+ */
+export function normalizeOllamaBaseURL(baseURL: string | undefined): string {
+  const trimmed = (baseURL ?? '').trim().replace(/\/+$/, '');
+
+  if (!trimmed) return 'http://localhost:11434/v1';
+  if (/\/api$/i.test(trimmed)) return `${trimmed.slice(0, -'/api'.length)}/v1`;
+  if (/\/v1$/i.test(trimmed)) return trimmed;
+
+  return `${trimmed}/v1`;
 }
 
 export function isModelApiMode(value: unknown): value is ModelApiMode {

@@ -1,13 +1,10 @@
-import { browser } from 'wxt/browser';
 import { ChevronDown } from 'lucide-react';
-import {
-  getModelProviderDefinition,
-  getModelDisplayIcon,
-  type ModelConfigItem,
-} from '@/constants/model-settings';
+import type { PublicModelConfigItem } from '@/constants/model-settings';
+import { getModelProviderDefinition } from '@/constants/model-settings';
+import { resolveModelIconUrl } from '@/lib/model-icon';
 
 interface ModelSelectorProps {
-  models: ModelConfigItem[];
+  models: PublicModelConfigItem[];
   /** Selected model *config* (endpoint + API key), i.e. `ModelConfigItem.id`. */
   currentModelId: string;
   onModelChange: (id: string) => void;
@@ -45,11 +42,7 @@ export function ModelSelector({
       <div className="relative flex items-center">
         {currentModel && (() => {
           const providerDef = getModelProviderDefinition(currentModel.providerId);
-          const iconUrl = getModelDisplayIcon(currentModel);
-          const src =
-            iconUrl.startsWith('http') || iconUrl.startsWith('data:')
-              ? iconUrl
-              : browser.runtime.getURL(iconUrl as any);
+          const src = resolveModelIconUrl(currentModel);
 
           return (
             <img

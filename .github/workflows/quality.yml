@@ -1,0 +1,33 @@
+# The full gate from AGENTS.md, run on every push and pull request.
+#
+# It exists because the gate was previously manual: nothing noticed that the
+# published `.output/` artifact had drifted two versions behind the source, or
+# that a `.test.tsx` file would silently never run.
+name: quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Type-check
+        run: npm run compile
+
+      - name: Test
+        run: npm run test
+
+      - name: Lint
+        run: npm run lint

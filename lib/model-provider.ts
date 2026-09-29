@@ -3,9 +3,11 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createOpenResponses } from '@ai-sdk/open-responses';
-import { createOllama } from 'ollama-ai-provider';
 import type { LanguageModel } from 'ai';
-import type { ModelConfigItem } from '@/constants/model-settings';
+import {
+  normalizeOllamaBaseURL,
+  type ModelConfigItem,
+} from '@/constants/model-settings';
 
 type ProviderSettings = {
   apiKey?: string;
@@ -48,7 +50,17 @@ export function createLanguageModelFromConfig(
     case 'google':
       return createGoogleGenerativeAI(settings).languageModel(config.modelId);
     case 'ollama':
-      return createOllama(settings).languageModel(config.modelId) as unknown as LanguageModel;
+      // Served by the OpenAI-compatible client: `ollama-ai-provider` still
+      // declares specification version v1 and AI SDK 6 rejects those models at
+      // runtime (`AI_UnsupportedModelVersionError`), so the typed cast it used
+      // to rely on could never work. Ollama ignores the API key, but the client
+      // wants a non-empty one, hence the placeholder.
+      return createOpenAICompatible({
+        ...settings,
+        apiKey: config.apiKey || 'ollama',
+        baseURL: normalizeOllamaBaseURL(config.baseURL),
+        name: config.name || 'ollama',
+      })(config.modelId);
     default:
       throw new Error('Unsupported provider.');
   }

@@ -85,7 +85,11 @@ export default function RightFloatingBallContainer({
     el.style.left = `${el.offsetLeft}px`;
     el.style.right = 'auto';
 
-    document.body.classList.add('select-none'); // Prevent text selection
+    // Text selection is suppressed on our own element (see the render below)
+    // rather than by adding `select-none` to the page's <body>: the extension's
+    // Tailwind CSS is injected into its shadow root, so that class never
+    // applies on a normal page -- and on a page that happens to use Tailwind it
+    // would make the whole site unselectable.
   };
 
   // Common drag move
@@ -121,8 +125,6 @@ export default function RightFloatingBallContainer({
     isDraggingRef.current = false;
     setIsDragging(false);
 
-    document.body.classList.remove('select-none');
-
     const el = floatingBallRef.current;
     if (!el) return;
 
@@ -134,50 +136,37 @@ export default function RightFloatingBallContainer({
     setPositionY(el.style.top);
   };
 
-  // Mouse drag events handlers
-  const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    // Only drag on left click
-    if (e.button !== 0) return;
-    // Don't drag if clicking the close button
+  // Pointer Events with pointer capture: every move/up/cancel comes back to this
+  // element even when the pointer leaves the window or a touch is cancelled by
+  // a system gesture. The previous document-level mousemove/mouseup pair (and a
+  // touch pair without touchcancel) could miss the release entirely, leaving
+  // the ball stuck in the dragging state with listeners still attached.
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     if ((e.target as HTMLElement).closest('[data-close-btn]')) return;
+
+    const el = floatingBallRef.current;
+    if (!el) return;
 
     handleDragStart(e.clientX, e.clientY);
-
-    const handleMouseMove = (event: MouseEvent) => {
-      handleDragMove(event.clientX, event.clientY);
-    };
-
-    const handleMouseUp = () => {
-      handleDragEnd();
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    el.setPointerCapture?.(e.pointerId);
   };
 
-  // Touch drag events handlers (for mobile support)
-  const onTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest('[data-close-btn]')) return;
-    const touch = e.touches[0];
-    handleDragStart(touch.clientX, touch.clientY);
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return;
+    handleDragMove(e.clientX, e.clientY);
+  };
 
-    const handleTouchMove = (event: TouchEvent) => {
-      if (!isDraggingRef.current) return;
-      event.preventDefault();
-      const t = event.touches[0];
-      handleDragMove(t.clientX, t.clientY);
-    };
+  const onPointerUpOrCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current) return;
 
-    const handleTouchEnd = () => {
-      handleDragEnd();
-      document.removeEventListener('touchmove', handleTouchMove);
-      document.removeEventListener('touchend', handleTouchEnd);
-    };
+    try {
+      floatingBallRef.current?.releasePointerCapture?.(e.pointerId);
+    } catch {
+      // Already released (e.g. the pointer was cancelled).
+    }
 
-    document.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.addEventListener('touchend', handleTouchEnd);
+    handleDragEnd();
   };
 
   if (!isLoaded) return null;
@@ -185,14 +174,19 @@ export default function RightFloatingBallContainer({
   return (
     <div
       ref={floatingBallRef}
-      onMouseDown={onMouseDown}
-      onTouchStart={onTouchStart}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUpOrCancel}
+      onPointerCancel={onPointerUpOrCancel}
       style={{
         right: `${THRESHOLD}px`,
         cursor: isDragging ? 'grabbing' : 'grab',
+        touchAction: 'none',
       }}
       className={cn(
         'fixed z-50 group flex items-center justify-center rounded-full select-none',
+        // Suppress selection only while dragging, and only on our own element.
+        isDragging && 'select-none',
         // Enable smooth sliding transition when not actively dragging
         !isDragging && 'transition-all duration-300 cubic-bezier(0.16, 1, 0.3, 1)',
         className

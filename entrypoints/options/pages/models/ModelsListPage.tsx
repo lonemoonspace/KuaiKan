@@ -7,9 +7,9 @@ import { browser } from 'wxt/browser';
 import { Button } from '@/components/ui/button';
 import {
   getModelProviderDefinition,
-  getModelDisplayIcon,
   type ModelConfigItem,
 } from '@/constants/model-settings';
+import { resolveModelIconUrl } from '@/lib/model-icon';
 import { getUiMessages } from '@/lib/i18n';
 import {
   buildModelExportFile,
@@ -18,14 +18,11 @@ import {
   parseModelExportFile,
 } from '@/lib/model-transfer';
 import {
-  createModelConfig,
-  deleteModelConfig,
   loadModelSettings,
-  moveModelConfig,
-  replaceModelSettings,
-  setDefaultModelConfig,
   type ModelSettings,
 } from '@/lib/model-settings-storage';
+import type { ModelMutationRequest } from '@/lib/settings-mutations';
+import { sendMessage as sendExtMessage } from '@/lib/messaging';
 import { cn } from '@/lib/utils';
 import { OptionsPageTitle } from '../OptionsPageTitle';
 
@@ -66,23 +63,49 @@ export function ModelsListPage() {
     setSettings(await loadModelSettings());
   }
 
+  /**
+   * Run one mutation in the background (the single writer for these keys) and
+   * adopt the settings it returns, so the list always reflects what was
+   * actually persisted rather than what this page hoped to persist.
+   */
+  async function runMutation(request: ModelMutationRequest): Promise<boolean> {
+    const response = await sendExtMessage('mutateModelSettings', request);
+    setSettings(response.settings);
+
+    if (response.op === 'create' || response.op === 'update') return true;
+    // `replace` (the import) reports counts instead of a flag; the import path
+    // handles it directly and never routes through here.
+    if (response.op === 'replace') return response.saved > 0;
+
+    return response.changed;
+  }
+
   function handleExport() {
     if (!settings) return;
 
     try {
+      // Keys are secrets: writing them into a file that lands in ~/Downloads
+      // (or a synced folder) has to be an explicit choice, not the default.
+      const includeSecrets = window.confirm(messages.models.exportIncludeSecretsConfirm);
+
       const file = buildModelExportFile(
         settings.models,
         settings.defaultModelId,
         browser.runtime.getManifest().version,
+        { includeSecrets },
       );
 
       downloadJsonFile(
         JSON.stringify(file, null, 2),
         `kuai-kan-models-${new Date().toISOString().slice(0, 10)}.json`,
       );
-      toast.success(`已导出 ${file.models.length} 个模型配置（含 API Key）`);
+      toast.success(
+        includeSecrets
+          ? messages.models.exportedWithSecretsToast(file.models.length)
+          : messages.models.exportedToast(file.models.length),
+      );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '导出失败');
+      toast.error(error instanceof Error ? error.message : messages.models.exportFailed);
     }
   }
 
@@ -115,11 +138,26 @@ export function ModelsListPage() {
           ? parsed.defaultModelId
           : merged[0]?.id ?? null;
 
-      await replaceModelSettings({ models: merged, defaultModelId });
-      await reloadSettings();
-      toast.success(`已导入 ${merged.length} 个模型配置`);
+      const response = await sendExtMessage('mutateModelSettings', {
+        op: 'replace',
+        settings: { models: merged, defaultModelId },
+      });
+      setSettings(response.settings);
+
+      // Report what was actually written, not what the file claimed: rows the
+      // storage layer could not parse are skipped (and kept in storage
+      // untouched) rather than silently counted as imported.
+      if (response.op === 'replace') {
+        if (response.rejected > 0) {
+          toast.warning(
+            messages.models.importedPartialToast(response.saved, response.rejected),
+          );
+        } else {
+          toast.success(messages.models.importedToast(response.saved));
+        }
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '导入失败');
+      toast.error(error instanceof Error ? error.message : messages.models.importFailed);
     }
   }
 
@@ -153,7 +191,7 @@ export function ModelsListPage() {
     runModelAction(
       model.id,
       async () => {
-        const deleted = await deleteModelConfig(model.id);
+        const deleted = await runMutation({ op: 'delete', id: model.id });
 
         if (deleted) {
           toast.success(messages.models.deletedToast);
@@ -171,8 +209,8 @@ export function ModelsListPage() {
       async () => {
         const { id, at, ...draft } = model;
         const newDraft = { ...draft, name: `${model.name} (Copy)` };
-        
-        const created = await createModelConfig(newDraft);
+
+        const created = await runMutation({ op: 'create', draft: newDraft });
 
         if (created) {
           toast.success(messages.models.duplicatedToast);
@@ -300,7 +338,7 @@ export function ModelsListPage() {
                       onChange={() =>
                         runModelAction(
                           model.id,
-                          () => setDefaultModelConfig(model.id),
+                          () => runMutation({ op: 'setDefault', id: model.id }),
                           messages.models.defaultChangedFailed,
                         )
                       }
@@ -309,7 +347,7 @@ export function ModelsListPage() {
                     <img
                       alt=""
                       className="size-5 shrink-0 object-contain"
-                      src={getModelDisplayIcon(model)}
+                      src={resolveModelIconUrl(model)}
                       title={provider.label}
                     />
                     <span className="flex min-w-0 items-baseline gap-2">
@@ -387,7 +425,7 @@ export function ModelsListPage() {
                     onClick={() =>
                       runModelAction(
                         model.id,
-                        () => moveModelConfig(model.id, 'up'),
+                        () => runMutation({ op: 'move', id: model.id, direction: 'up' }),
                         messages.models.moveFailed,
                       )
                     }
@@ -404,7 +442,7 @@ export function ModelsListPage() {
                     onClick={() =>
                       runModelAction(
                         model.id,
-                        () => moveModelConfig(model.id, 'down'),
+                        () => runMutation({ op: 'move', id: model.id, direction: 'down' }),
                         messages.models.moveFailed,
                       )
                     }

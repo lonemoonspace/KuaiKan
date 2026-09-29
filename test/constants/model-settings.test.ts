@@ -4,8 +4,47 @@ import {
   findBaseURLPreset,
   getModelDisplayIcon,
   getModelOptionLabel,
+  getModelProviderDefinition,
   getModelVendorLabel,
+  normalizeOllamaBaseURL,
 } from '@/constants/model-settings';
+
+describe('normalizeOllamaBaseURL', () => {
+  it('rewrites the legacy native /api base URL to the OpenAI-compatible /v1', () => {
+    expect(normalizeOllamaBaseURL('http://localhost:11434/api')).toBe(
+      'http://localhost:11434/v1',
+    );
+    expect(normalizeOllamaBaseURL('http://localhost:11434/api/')).toBe(
+      'http://localhost:11434/v1',
+    );
+  });
+
+  it('keeps an already-correct /v1 base URL untouched', () => {
+    expect(normalizeOllamaBaseURL('http://192.168.1.9:11434/v1')).toBe(
+      'http://192.168.1.9:11434/v1',
+    );
+  });
+
+  it('appends /v1 to a bare host and to a custom path', () => {
+    expect(normalizeOllamaBaseURL('http://localhost:11434')).toBe(
+      'http://localhost:11434/v1',
+    );
+    expect(normalizeOllamaBaseURL('https://ollama.example.com/proxy')).toBe(
+      'https://ollama.example.com/proxy/v1',
+    );
+  });
+
+  it('falls back to the local default when the stored value is empty', () => {
+    expect(normalizeOllamaBaseURL('')).toBe('http://localhost:11434/v1');
+    expect(normalizeOllamaBaseURL(undefined)).toBe('http://localhost:11434/v1');
+  });
+
+  it('ships an ollama row that points at /v1 and fetches models from /models', () => {
+    const ollama = getModelProviderDefinition('ollama');
+    expect(ollama.defaultBaseURL).toBe('http://localhost:11434/v1');
+    expect(ollama.modelsPath).toBe('/models');
+  });
+});
 
 describe('createDefaultModelDraft', () => {
   it('pre-fills the body override that turns reasoning off on compatible endpoints', () => {

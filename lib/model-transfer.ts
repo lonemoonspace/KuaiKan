@@ -1,4 +1,6 @@
 import type { ModelConfigItem } from '@/constants/model-settings';
+import { filterPersistableModelRows } from '@/lib/model-settings-storage';
+import { migrateModelConfigs } from '@/lib/migration';
 
 /** Marker so an arbitrary JSON file can be rejected before it is trusted. */
 export const MODEL_EXPORT_FILE_TYPE = 'kuai-kan-models';
@@ -13,11 +15,24 @@ export type ModelExportFile = {
   models: ModelConfigItem[];
 };
 
+export type ModelExportOptions = {
+  /**
+   * Include `apiKey` and per-endpoint `headers`. Off by default: an export is a
+   * plain file that ends up in ~/Downloads, a synced folder or a chat message,
+   * and re-importing a credential-free row backfills the local key as long as
+   * the endpoint still matches (`mergeImportedModels`).
+   */
+  includeSecrets?: boolean;
+};
+
 export function buildModelExportFile(
   models: ModelConfigItem[],
   defaultModelId: string | null,
   appVersion?: string,
+  options: ModelExportOptions = {},
 ): ModelExportFile {
+  const includeSecrets = options.includeSecrets === true;
+
   return {
     type: MODEL_EXPORT_FILE_TYPE,
     version: MODEL_EXPORT_FILE_VERSION,
@@ -25,7 +40,10 @@ export function buildModelExportFile(
     ...(appVersion ? { appVersion } : {}),
     defaultModelId,
     // A shallow copy per row: the caller's array is the one React is rendering.
-    models: models.map((model) => ({ ...model })),
+    models: models.map((model) => ({
+      ...model,
+      ...(includeSecrets ? {} : { apiKey: '', headers: {} }),
+    })),
   };
 }
 
@@ -69,12 +87,19 @@ export function parseModelExportFile(raw: unknown): ParsedModelExport {
     return { ok: false, error: '文件不是 KuaiKan 的模型导出，或内容缺少 models 列表。' };
   }
 
-  // Rows are validated in full by the storage layer on write; here we only need
-  // enough shape to merge and report a count.
-  const models = rows.filter(
-    (row): row is ModelConfigItem =>
-      isRecord(row) && typeof row.id === 'string' && typeof row.modelId === 'string',
+  // Rows from a backup taken before the V1 -> V2 migration carry
+  // `providerType` / `modelName` instead of `providerId` / `modelId`, so they
+  // go through the same migration the storage layer runs. Without this the
+  // legacy whole-storage export path accepted below would reject the very rows
+  // it exists to rescue.
+  const { models: migratedRows } = migrateModelConfigs(
+    rows.filter(isRecord) as Record<string, any>[],
   );
+
+  // Exactly the validation the write path uses, so "the file has models" and
+  // "those models can be persisted" can never disagree -- the import used to
+  // report a count of rows that storage then silently dropped.
+  const models = filterPersistableModelRows(migratedRows);
 
   if (models.length === 0) {
     return { ok: false, error: '文件里没有可用的模型配置。' };

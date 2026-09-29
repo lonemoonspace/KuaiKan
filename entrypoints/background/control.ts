@@ -1,5 +1,6 @@
 import { onMessage, sendMessage } from '@/lib/messaging';
 import { loadGeneralSettings } from '@/lib/general-settings-storage';
+import { isTrustedSender } from '@/lib/background-trust';
 import { storage } from '#imports';
 import { browser, type Browser } from 'wxt/browser';
 import { sleep } from 'radash';
@@ -12,6 +13,8 @@ const logger = createLogger('background:control');
 
 export function registerControlMessages() {
   onMessage('openOptionPage', async (msg) => {
+    if (!isTrustedSender(msg.sender)) return;
+
     logger.debug('[openOptionPage]', msg.data);
     try {
       await browser.tabs.create({ url: resolveOptionsUrl(msg.data) });
@@ -35,51 +38,68 @@ export function registerControlMessages() {
   );
 }
 
+/**
+ * Pages no content script can run on. Asking the tab whether it is alive would
+ * only burn the retry budget (~2.3s) before failing, so these are recognised up
+ * front.
+ */
+function isUnsupportedPageUrl(url: string | undefined): boolean {
+  if (!url) return false;
+
+  return (
+    /^(chrome|edge|brave|about|devtools|view-source|chrome-extension|moz-extension|file):/i.test(
+      url,
+    ) ||
+    /^https?:\/\/(chrome\.google\.com\/webstore|chromewebstore\.google\.com)/i.test(url)
+  );
+}
+
 function isInjectionForbidden(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /cannot access|cannot be scripted|extensions gallery|missing host permission|no tab with id/i.test(
+  return /cannot access|cannot be scripted|extensions gallery|missing host permission|no tab with id|could not establish connection|receiving end does not exist/i.test(
     message,
   );
 }
 
 export async function activePageAndInvokeSummary(tab: Browser.tabs.Tab) {
   if (!tab.id) return;
-  
-  let shadowRootExist = false;
-  // Give heavy pages (large DOM / SVG-heavy) more time to mount the shadow
-  // root: ten probes spanning ~2.3s instead of 500ms. Only the retries sleep —
-  // when this is triggered from the context menu the panel is usually already
-  // mounted, so an unconditional first wait would add 250ms of pure latency to
-  // every trigger.
-  for (let i = 0; i < 10; i++) {
-    if (i > 0) await sleep(250);
-    try {
-      const result = await browser.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => {
-          return !!document.querySelector('webpage-summary-entrance')?.shadowRoot;
-        },
-      });
-      shadowRootExist = Boolean(result?.[0]?.result);
-      if (shadowRootExist) {
-        break;
+
+  let contentScriptReady = false;
+  // Give heavy pages (large DOM / SVG-heavy) more time to load the content
+  // script: ten probes spanning ~2.3s instead of 500ms. Only the retries sleep
+  // — when this is triggered from the context menu the content script is
+  // usually already there, so an unconditional first wait would add 250ms of
+  // pure latency to every trigger.
+  //
+  // This probes with `ping` rather than `scripting.executeScript`: the content
+  // script answers only once it is loaded, which is the same question, and it
+  // lets the extension drop the `scripting` permission.
+  if (!isUnsupportedPageUrl(tab.url)) {
+    for (let i = 0; i < 10; i++) {
+      if (i > 0) await sleep(250);
+      try {
+        const result = await sendMessage('ping', undefined, { tabId: tab.id });
+        if (result?.ok) {
+          contentScriptReady = true;
+          break;
+        }
+      } catch (e) {
+        logger.warn('[activePageAndInvokeSummary] ping failed', e);
+        // Restricted pages reject every probe identically; retrying only burns
+        // ~2s.
+        if (isInjectionForbidden(e)) break;
       }
-    } catch (e) {
-      logger.warn('[activePageAndInvokeSummary] script execution failed', e);
-      // Restricted pages (chrome://, the web store, unauthorized sites) reject
-      // every injection identically; retrying only burns ~2s.
-      if (isInjectionForbidden(e)) break;
     }
   }
 
-  if (shadowRootExist) {
+  if (contentScriptReady) {
     const settings = await loadGeneralSettings();
     const beginSummary = settings.enableAutoBeginSummaryByActionOrContextTrigger;
     sendMessage('invokeSummary', { beginSummary }, { tabId: tab.id }).catch(e => {
       logger.warn('[activePageAndInvokeSummary] sendMessage failed', e);
     });
   } else {
-    logger.error("Cannot find webpage-summary-entrance shadow root, check if extension is enabled on this page.");
+    logger.error("Cannot reach the content script on this page, check if the extension is enabled on it.");
   }
 }
 
@@ -138,9 +158,14 @@ export function initializeControlHandlers() {
  * Resolve them against the extension origin here so every entry point that
  * opens a settings page (the `openOptionPage` message and the context menu)
  * hands `tabs.create` the same absolute URL.
+ *
+ * Anything that is not one of our own options paths falls back to the settings
+ * root. The message carries a URL that ends up in `tabs.create`, so passing an
+ * absolute one through would make this an open redirect (a page-influenced
+ * caller could open an arbitrary site under the extension's action).
  */
 function resolveOptionsUrl(target: string): string {
-  return target.startsWith('/')
+  return target.startsWith('/options.html')
     ? browser.runtime.getURL(target as `/options.html${string}`)
-    : target;
+    : browser.runtime.getURL('/options.html#/');
 }

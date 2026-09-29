@@ -4,8 +4,8 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import {
   loadModelSettings,
-  updateModelConfig,
 } from '@/lib/model-settings-storage';
+import { sendMessage as sendExtMessage } from '@/lib/messaging';
 import type { ModelConfigItem } from '@/constants/model-settings';
 import { OptionsPageTitle } from '../OptionsPageTitle';
 import { ModelEditor } from './ModelEditor';
@@ -78,7 +78,11 @@ export function EditModelPage() {
             setIsSaving(true);
 
             try {
-              await updateModelConfig(model.id, draft);
+              await sendExtMessage('mutateModelSettings', {
+                op: 'update',
+                id: model.id,
+                draft,
+              });
               toast.success('Model saved.');
               navigate('/models');
             } finally {

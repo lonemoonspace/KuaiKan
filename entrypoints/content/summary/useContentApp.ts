@@ -8,7 +8,6 @@ import type { UIMessage } from 'ai';
 import { AiSdkConnectTransport } from '@/lib/ai-sdk-connect-transport';
 import {
   loadModelSettings,
-  setModelConfigModelId,
 } from '@/lib/model-settings-storage';
 import { loadPromptSettings } from '@/lib/prompt-settings-storage';
 import { loadGeneralSettings } from '@/lib/general-settings-storage';
@@ -29,9 +28,11 @@ import {
 
 import {
   MODEL_CONFIGS_V2_STORAGE_KEY,
-  type ModelConfigItem,
+  toPublicModelConfig,
+  type PublicModelConfigItem,
 } from '@/constants/model-settings';
 import {
+  PROMPT_CONFIG_STORAGE_KEY,
   SUMMARY_LANGUAGE_NAME,
   type PromptConfigItem,
 } from '@/constants/prompt-settings';
@@ -70,7 +71,9 @@ export function useContentApp({
   onPersistMessages,
 }: UseContentAppOptions = {}) {
   const messagesI18n = getUiMessages();
-  const [models, setModels] = useState<ModelConfigItem[]>([]);
+  // Only the display fields: the panel runs in the page's content-script world,
+  // and the API keys / headers it does not need stay in the background.
+  const [models, setModels] = useState<PublicModelConfigItem[]>([]);
   const [prompts, setPrompts] = useState<PromptConfigItem[]>([]);
   const [currentModelId, setCurrentModelId] = useState<string>('');
   const [currentPromptId, setCurrentPromptId] = useState<string>('');
@@ -99,7 +102,7 @@ export function useContentApp({
   // always-current ref instead of the render closure, so a stale closure can
   // never freeze `prompts/pageContent/settings` at their mount-time empties.
   const summarizeContextRef = useRef<{
-    currentModel: ModelConfigItem | null;
+    currentModel: PublicModelConfigItem | null;
     currentModelId: string;
     currentPromptId: string;
     pageContent: WebpageContent | null;
@@ -272,7 +275,7 @@ export function useContentApp({
 
         if (!active) return;
 
-        setModels(modelSettings.models);
+        setModels(modelSettings.models.map(toPublicModelConfig));
         setPrompts(promptSettings.prompts);
 
         const defaultModelId =
@@ -313,7 +316,7 @@ export function useContentApp({
             );
             markTiming('面板：正文抽取完成');
             if (!active) return;
-            if (extracted) {
+            if (extracted?.textContent) {
               cachePageContent(window.location.href, extracted);
               markTiming('面板：写入正文缓存（innerText 签名）完成');
               pageHrefRef.current = window.location.href;
@@ -367,10 +370,40 @@ export function useContentApp({
     const unwatch = storage.watch(MODEL_CONFIGS_V2_STORAGE_KEY, () => {
       void loadModelSettings()
         .then((settings) => {
-          if (active) setModels(settings.models);
+          if (active) setModels(settings.models.map(toPublicModelConfig));
         })
         .catch((e) =>
           logger.error('[useContentApp] Failed to refresh model configs', e),
+        );
+    });
+
+    return () => {
+      active = false;
+      unwatch();
+    };
+  }, []);
+
+  // Prompt templates edited or deleted on the options page have to reach a
+  // panel that is already open. Without this the panel kept summarizing with a
+  // stale template, and a deleted prompt stayed usable because the old copy was
+  // still in `prompts` -- contradicting the "no prompt configured" fallback.
+  useEffect(() => {
+    let active = true;
+
+    const unwatch = storage.watch(PROMPT_CONFIG_STORAGE_KEY, () => {
+      void loadPromptSettings()
+        .then((settings) => {
+          if (!active) return;
+
+          setPrompts(settings.prompts);
+          setCurrentPromptId((current) =>
+            settings.prompts.some((prompt) => prompt.id === current)
+              ? current
+              : settings.defaultPromptId ?? settings.prompts[0]?.id ?? '',
+          );
+        })
+        .catch((e) =>
+          logger.error('[useContentApp] Failed to refresh prompt configs', e),
         );
     });
 
@@ -446,16 +479,18 @@ export function useContentApp({
     if (!configId || !modelId) return;
 
     try {
-      const changed = await setModelConfigModelId(configId, modelId);
+      // Written by the background worker: it is the single writer for this key,
+      // so a change here cannot clobber an edit being saved in the options page.
+      const response = await sendExtMessage('mutateModelSettings', {
+        op: 'setModelId',
+        configId,
+        modelId,
+      });
 
-      if (!changed) return;
-
-      // Reload rather than waiting for the storage watcher: whether an
-      // onChanged event fires back into the context that wrote is an
-      // implementation detail, and the picker must never snap back to the
-      // previous id. A failed write leaves the UI on the old value.
-      const settings = await loadModelSettings();
-      setModels(settings.models);
+      // Adopt what was actually persisted rather than waiting for the storage
+      // watcher: whether an onChanged event fires back into the writing context
+      // is an implementation detail, and the picker must never snap back.
+      setModels(response.settings.models.map(toPublicModelConfig));
     } catch (e) {
       logger.error('[useContentApp] Failed to switch the model id', e);
     }
@@ -476,7 +511,13 @@ export function useContentApp({
       for (let waited = 0; isBusy() && waited < 2000; waited += 50) {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
-      if (isBusy()) return;
+      if (isBusy()) {
+        // Giving up silently looked exactly like a dead button: the external
+        // triggers (context menu, popup, auto-summarize) have no other feedback.
+        logger.warn('[useContentApp] Previous stream did not settle; not restarting');
+        toast.error(messagesI18n.content.stopTimedOut);
+        return;
+      }
     }
 
     beginSummaryTiming();
@@ -582,7 +623,15 @@ export function useContentApp({
     // Wait for initialization to finish before deciding anything: models and
     // prompts are empty until then, which is indistinguishable from "the user
     // has none configured".
-    if (!initialized || !settings) return;
+    if (!initialized) return;
+
+    if (!settings) {
+      // Initialization finished without settings (storage or messaging failed).
+      // Leaving the flag set would strand the request with no feedback at all.
+      setAutoSummarizePending(false);
+      toast.error(messagesI18n.content.settingsUnavailable);
+      return;
+    }
 
     if (!currentModelId || models.length === 0) {
       // Without a model there is nothing to run, and leaving the pending flag
@@ -615,7 +664,15 @@ export function useContentApp({
     if (pageContent) {
       setAutoSummarizePending(false);
       void summarize(true);
+      return;
     }
+
+    // The trigger (context menu, popup, auto-summarize) asked for a summary but
+    // this page yielded no article text. Clearing the flag and saying so beats
+    // freezing: a lingering pending flag would later be consumed by a content
+    // refresh and fire a request the user never made again.
+    setAutoSummarizePending(false);
+    toast.error(messagesI18n.content.noPageContent);
     // `summarize` and `messagesI18n` are deliberately left out of this
     // dependency array. `setAutoSummarizePending(false)` above doesn't commit
     // synchronously — so if `summarize` were listed here and its identity ever

@@ -1,5 +1,11 @@
 import type { SummaryInputExceedBehaviour } from '@/constants/general-settings';
 import type { PanelSnapshot, PanelSnapshotPatch } from '@/lib/panel-snapshot';
+import type {
+  ModelMutationRequest,
+  ModelMutationResponse,
+  PromptMutationRequest,
+  PromptMutationResponse,
+} from '@/lib/settings-mutations';
 import { defineExtensionMessaging } from '@webext-core/messaging';
 
 export interface ProtocolMap {
@@ -15,6 +21,13 @@ export interface ProtocolMap {
   /** Per-tab, per-page panel state (open flag + summary), kept in storage.session by the background */
   loadPanelSnapshot(input: { pageKey: string }): PanelSnapshot | null;
   savePanelSnapshot(input: { pageKey: string; patch: PanelSnapshotPatch }): void;
+
+  /**
+   * Model/prompt settings mutations, executed serially in the background so
+   * concurrent writers (panel, popup, options page) cannot lose an update.
+   */
+  mutateModelSettings(input: ModelMutationRequest): Promise<ModelMutationResponse>;
+  mutatePromptSettings(input: PromptMutationRequest): Promise<PromptMutationResponse>;
 
   /** Token counting and truncation */
   countInputTokens(input: { text: string }): number;

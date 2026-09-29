@@ -22,7 +22,7 @@ import {
   type PanelFontSize,
   type SummaryInputExceedBehaviour,
 } from '@/constants/general-settings';
-import { getModelDisplayIcon } from '@/constants/model-settings';
+import { resolveModelIconUrl } from '@/lib/model-icon';
 import {
   loadGeneralSettings,
   saveGeneralSetting,
@@ -31,17 +31,28 @@ import {
 import { getUiMessages } from '@/lib/i18n';
 import {
   loadModelSettings,
-  setDefaultModelConfig,
   type ModelSettings,
 } from '@/lib/model-settings-storage';
 import {
   loadPromptSettings,
-  setDefaultPrompt,
   type PromptSettings,
 } from '@/lib/prompt-settings-storage';
+import { sendMessage as sendExtMessage } from '@/lib/messaging';
 import type { PageTextExtractMethod } from '@/lib/page-extraction';
+import { storage } from '#imports';
+import {
+  DEFAULT_MODEL_ID_V2_STORAGE_KEY,
+  MODEL_CONFIGS_V2_STORAGE_KEY,
+} from '@/constants/model-settings';
+import {
+  DEFAULT_PROMPT_ID_STORAGE_KEY,
+  PROMPT_CONFIG_STORAGE_KEY,
+} from '@/constants/prompt-settings';
+import { createLogger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
 import { OptionsPageTitle } from './OptionsPageTitle';
+
+const logger = createLogger('options:GeneralPage');
 
 const EXTRACT_METHOD_OPTIONS: PageTextExtractMethod[] = [
   'readability',
@@ -206,16 +217,54 @@ export function GeneralPage() {
   ) {
     if (!settings) return;
 
-    const previous = settings;
+    const previousValue = settings[key];
     setSettings({ ...settings, [key]: value });
 
     try {
       await saveGeneralSetting(key, value);
     } catch (error) {
-      setSettings(previous);
+      // Roll back only the field that failed. Restoring the whole snapshot
+      // would also revert a different switch the user toggled (and saved)
+      // while this write was in flight, and the next click would then write
+      // that stale value back to storage.
+      setSettings((current) =>
+        current ? { ...current, [key]: previousValue } : current,
+      );
       toast.error(
         error instanceof Error ? error.message : messages.general.saveFailed,
       );
+    }
+  }
+
+  async function changeDefaultModel(value: string) {
+    try {
+      const response = await sendExtMessage('mutateModelSettings', {
+        op: 'setDefault',
+        id: value,
+      });
+      setModelSettings(response.settings);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : messages.options.header.defaultModelFailed,
+      );
+      // Re-read rather than guess: the select is controlled by state, so
+      // leaving the failed value in place would show a default that is not set.
+      setModelSettings(await loadModelSettings());
+    }
+  }
+
+  async function changeDefaultPrompt(value: string) {
+    try {
+      const response = await sendExtMessage('mutatePromptSettings', {
+        op: 'setDefault',
+        id: value,
+      });
+      setPromptSettings(response.settings);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : messages.options.header.defaultPromptFailed,
+      );
+      setPromptSettings(await loadPromptSettings());
     }
   }
 
@@ -240,6 +289,35 @@ export function GeneralPage() {
       setIsSaving(false);
     }
   }
+
+  // The model/prompt lists and the default choices can be changed from other
+  // contexts while this page sits in a background tab (the popup switches the
+  // default config, the panel switches a model id, another options tab edits
+  // them). Without these watchers the dropdowns kept offering the list they were
+  // mounted with, and picking a since-deleted row failed silently.
+  useEffect(() => {
+    const reloadModelSettings = () => {
+      void loadModelSettings()
+        .then(setModelSettings)
+        .catch((e) => logger.error('[GeneralPage] Failed to refresh model settings', e));
+    };
+    const reloadPromptSettings = () => {
+      void loadPromptSettings()
+        .then(setPromptSettings)
+        .catch((e) => logger.error('[GeneralPage] Failed to refresh prompt settings', e));
+    };
+
+    const unwatchers = [
+      storage.watch(MODEL_CONFIGS_V2_STORAGE_KEY, reloadModelSettings),
+      storage.watch(DEFAULT_MODEL_ID_V2_STORAGE_KEY, reloadModelSettings),
+      storage.watch(PROMPT_CONFIG_STORAGE_KEY, reloadPromptSettings),
+      storage.watch(DEFAULT_PROMPT_ID_STORAGE_KEY, reloadPromptSettings),
+    ];
+
+    return () => {
+      for (const unwatch of unwatchers) unwatch();
+    };
+  }, []);
 
   if (loadError) {
     return (
@@ -330,10 +408,7 @@ export function GeneralPage() {
             modelSettings ? (
               <div className="flex items-center gap-1.5">
                 <Select
-                  onValueChange={async (value) => {
-                    await setDefaultModelConfig(value);
-                    setModelSettings(await loadModelSettings());
-                  }}
+                  onValueChange={changeDefaultModel}
                   value={modelSettings.defaultModelId ?? undefined}
                 >
                   <SelectTrigger className="h-8 w-[200px] text-xs">
@@ -346,7 +421,7 @@ export function GeneralPage() {
                           <img
                             alt=""
                             className="size-4 shrink-0 object-contain"
-                            src={getModelDisplayIcon(model)}
+                            src={resolveModelIconUrl(model)}
                           />
                           <span className="truncate">{model.name}</span>
                         </span>
@@ -374,10 +449,7 @@ export function GeneralPage() {
             promptSettings ? (
               <div className="flex items-center gap-1.5">
                 <Select
-                  onValueChange={async (value) => {
-                    await setDefaultPrompt(value);
-                    setPromptSettings(await loadPromptSettings());
-                  }}
+                  onValueChange={changeDefaultPrompt}
                   value={promptSettings.defaultPromptId ?? undefined}
                 >
                   <SelectTrigger className="h-8 w-[200px] text-xs">

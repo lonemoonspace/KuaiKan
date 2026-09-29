@@ -5,7 +5,7 @@ import {
   CURRENT_MIGRATION_VERSION,
   runFullMigration,
 } from '@/lib/migration';
-import { __resetMockStorage, __getMockStorage } from '../mocks/wxt-browser';
+import { __resetMockStorage, __getMockStorage, __failNextStorageRemove } from '../mocks/wxt-browser';
 
 describe('migrateModelConfigs (pure V1 -> V2 model config conversion)', () => {
   it('is a no-op for an already-V2 model', () => {
@@ -128,13 +128,38 @@ describe('runFullMigration (storage key handling)', () => {
     await runFullMigration();
 
     const finalStore = __getMockStorage();
-    expect(finalStore['model-configs']).toBeDefined();
-    expect((finalStore['model-configs'] as any[])[0].providerId).toBe('openai-compatible');
+    const migrated = finalStore['model-configs'] as Array<Record<string, unknown>>;
+    expect(Array.isArray(migrated)).toBe(true);
+    expect(migrated[0].providerId).toBe('openai-compatible');
 
     // Version marker lives under the RAW key `migration-version`, not the
     // literal storage-key string `local:migration-version`.
     expect(finalStore['migration-version']).toBe(CURRENT_MIGRATION_VERSION);
     expect(finalStore[MIGRATION_VERSION_STORAGE_KEY]).toBeUndefined();
+  });
+
+  it('writes recovered data before removing the stranded keys, so a failed cleanup cannot lose it', async () => {
+    // Recovery keeps the rescued rows in memory until the write lands. If the
+    // removal ran first and the write then failed (a quota error, or the worker
+    // being recycled), the reclaimed data would be gone for good.
+    __resetMockStorage({
+      'local:model-configs': [{ providerId: 'openai', modelId: 'gpt-4.1-mini' }],
+    });
+    __failNextStorageRemove();
+
+    const result = await runFullMigration();
+
+    expect(result.ok).toBe(true);
+    expect(result.logs.join('\n')).toMatch(/Failed to clean up obsolete keys/);
+
+    const finalStore = __getMockStorage();
+    // The recovery is safely in place, and the marker with it...
+    const recovered = finalStore['model-configs'] as Array<Record<string, unknown>>;
+    expect(recovered[0].modelId).toBe('gpt-4.1-mini');
+    expect(recovered[0].providerId).toBe('openai');
+    expect(finalStore['migration-version']).toBe(CURRENT_MIGRATION_VERSION);
+    // ...which is also why the stale copy still being present is harmless.
+    expect(finalStore['local:model-configs']).toBeDefined();
   });
 
   it('is idempotent: running twice does not re-touch storage once the version marker matches', async () => {

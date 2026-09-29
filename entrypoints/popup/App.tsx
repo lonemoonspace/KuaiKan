@@ -4,14 +4,12 @@ import { browser } from 'wxt/browser';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
-  getModelDisplayIcon,
   getModelProviderDefinition,
   type ModelConfigItem,
 } from '@/constants/model-settings';
+import { resolveModelIconUrl } from '@/lib/model-icon';
 import {
   loadModelSettings,
-  setDefaultModelConfig,
-  setModelConfigModelId,
 } from '@/lib/model-settings-storage';
 import { sendMessage as sendExtMessage } from '@/lib/messaging';
 import { getUiMessages } from '@/lib/i18n';
@@ -77,9 +75,23 @@ function App() {
   // The provider row lists *configs*, grouped under their vendor: one config is
   // one endpoint plus one API key, and a vendor name alone cannot address it
   // when two configs point at the same vendor.
+  //
+  // Both handlers write through the background worker (the single writer for
+  // this key) and surface a failure instead of leaving the select showing a
+  // value that was never persisted.
   const handleConfigChange = async (id: string) => {
     setCurrentModelId(id);
-    await setDefaultModelConfig(id);
+
+    try {
+      const response = await sendExtMessage('mutateModelSettings', {
+        op: 'setDefault',
+        id,
+      });
+      setModels(response.settings.models);
+    } catch (e) {
+      logger.error('[popup] failed to set the default model config', e);
+      toast.error(messages.popup.defaultModelFailed);
+    }
   };
 
   // Switching the model rewrites only the selected config's `modelId`; the
@@ -91,7 +103,18 @@ function App() {
     setModels((current) =>
       current.map((m) => (m.id === config.id ? { ...m, modelId } : m)),
     );
-    await setModelConfigModelId(config.id, modelId);
+
+    try {
+      const response = await sendExtMessage('mutateModelSettings', {
+        op: 'setModelId',
+        configId: config.id,
+        modelId,
+      });
+      setModels(response.settings.models);
+    } catch (e) {
+      logger.error('[popup] failed to switch the model id', e);
+      toast.error(messages.popup.modelSwitchFailed);
+    }
   };
 
   const handleCopyPage = async () => {
@@ -109,7 +132,11 @@ function App() {
     try {
       logger.info('[popup] sending WEBPAGE_SUMMARY_EXTRACT_TEXT to tab', activeTabId);
       const result = await sendExtMessage('extractText', undefined, { tabId: activeTabId });
-      logger.info('[popup] extract result', result);
+      // Length only: `result.text` is the whole page.
+      logger.info('[popup] extract result', {
+        ok: result?.ok,
+        textLength: result && 'text' in result ? result.text?.length : undefined,
+      });
 
       if (!result?.ok || !('text' in result) || !result.text) {
         logger.warn('[popup] extract returned no text', result);
@@ -250,14 +277,10 @@ function App() {
 
 function ModelIcon({ model }: { model: ModelConfigItem }) {
   const providerDef = getModelProviderDefinition(model.providerId);
-  const iconUrl = getModelDisplayIcon(model);
-  const src =
-    iconUrl.startsWith('http') || iconUrl.startsWith('data:')
-      ? iconUrl
-      : browser.runtime.getURL(iconUrl as any);
+
   return (
     <img
-      src={src}
+      src={resolveModelIconUrl(model)}
       alt={providerDef.label}
       className="pointer-events-none size-3.5 object-contain"
     />

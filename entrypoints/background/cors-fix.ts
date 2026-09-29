@@ -73,7 +73,7 @@
  * wxt.config.ts. This permission does NOT require user approval during installation.
  */
 
-import { browser,  } from 'wxt/browser';
+import { browser } from 'wxt/browser';
 
 import { createLogger } from '@/lib/logger';
 

@@ -12,7 +12,7 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { GENERAL_SETTING_DEFINITIONS } from '@/constants/general-settings';
 import { loadGeneralSettings } from '@/lib/general-settings-storage';
 import { setCurrentPageSelection } from '@/lib/page-selection';
-import { getPageKey, type PanelSnapshotPatch } from '@/lib/panel-snapshot';
+import { getPageKey, persistableMessages, type PanelSnapshotPatch } from '@/lib/panel-snapshot';
 
 import { createLogger } from '@/lib/logger';
 
@@ -117,8 +117,14 @@ export function ContentEntrance({ ctx }: { ctx: ContentScriptContext }) {
   const handleBeginSummaryHandled = useCallback(() => setSummaryRequest(null), []);
 
   const handlePersistMessages = useCallback((key: string, latest: UIMessage[]) => {
-    pageMessagesRef.current.set(key, latest);
-    savePanelSnapshot(key, { messages: latest });
+    // Keep only the assistant messages in memory as well as on disk. The system
+    // and user messages carry the rendered prompt with the whole page text, so
+    // holding them here would leave a copy of every summarized article resident
+    // for the lifetime of this tab -- and would also make an in-memory restore
+    // behave differently from a snapshot restore.
+    const keep = persistableMessages(latest);
+    pageMessagesRef.current.set(key, keep);
+    savePanelSnapshot(key, { messages: keep });
   }, []);
 
   useEffect(() => {

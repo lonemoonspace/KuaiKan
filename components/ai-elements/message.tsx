@@ -50,7 +50,12 @@ const escapeHtml = (value: string) =>
 const isSafeUrl = (href: string) => {
   try {
     const normalized = href.trim().replace(/[\u0000-\u001f\u007f]/g, '');
-    const url = new URL(normalized, window.location.href);
+    // Relative URLs resolve against the summarized page in the browser. The
+    // fallback base only exists so the protocol check still means something
+    // when this module is loaded outside a page (vitest runs in node).
+    const base =
+      typeof window === 'undefined' ? 'https://localhost/' : window.location.href;
+    const url = new URL(normalized, base);
     return ['http:', 'https:', 'mailto:'].includes(url.protocol);
   } catch {
     return false;
@@ -85,20 +90,26 @@ function loadMarkdownRenderer(): Promise<(text: string) => string> {
       renderer.link = ({ href, title, tokens }) => {
         const safeHref = isSafeUrl(href) ? href : '#';
         const text = renderer.parser.parseInline(tokens);
-        return `<a href="${escapeHtml(safeHref)}"${title ? ` title="${escapeHtml(title)}"` : ''}>${text}</a>`;
+        // `rel` plus `target=_blank` keep a model-supplied link from navigating
+        // the summarized page away and from reaching back through window.opener.
+        return `<a href="${escapeHtml(safeHref)}"${title ? ` title="${escapeHtml(title)}"` : ''} target="_blank" rel="noopener noreferrer">${text}</a>`;
       };
       renderer.heading = ({ tokens, depth, text }) => {
         const tone = getHeadingTone(text);
         const inner = renderer.parser.parseInline(tokens);
         return `<h${depth}${tone ? ` data-tone="${tone}"` : ''}>${inner}</h${depth}>\n`;
       };
-      renderer.image = ({ href, title, text }) => {
-        // Images get the same protocol whitelist as links: LLM output is
-        // page-influenced, so javascript:/data:/vbscript: URLs must not
-        // reach the DOM as img src. Unsafe images degrade to their text.
-        if (!isSafeUrl(href)) return text;
-        return `<img src="${escapeHtml(href)}" alt="${escapeHtml(text)}"${title ? ` title="${escapeHtml(title)}"` : ''} />`;
-      };
+      // Images are never emitted. Model output is page-influenced, so an
+      // `<img src>` here would let the summarized page turn the panel into an
+      // outbound request: a tracking pixel for an absolute URL, or a
+      // credentialed same-origin GET when `isSafeUrl` resolves a relative URL
+      // against the page being summarized. The alt text carries the same
+      // information as plain text with no network side effect.
+      //
+      // The alt text is escaped, not returned raw: marked treats renderer
+      // output as trusted HTML, so `![<img src=x onerror=…>](…)` would
+      // otherwise inject markup straight into `dangerouslySetInnerHTML`.
+      renderer.image = ({ text }) => escapeHtml(text);
       return (text: string) =>
         marked.parse(text, {
           async: false,
@@ -111,6 +122,17 @@ function loadMarkdownRenderer(): Promise<(text: string) => string> {
   return markdownRendererPromise;
 }
 
+/**
+ * The panel's whole markdown pipeline: pull citation markers out of the raw
+ * text, render, then restore the chips. Exported so tests can drive the real
+ * renderer (escaping, link/image policy) rather than a copy of it.
+ */
+export async function renderMarkdownToHtml(text: string): Promise<string> {
+  const render = await loadMarkdownRenderer();
+  const extracted = extractCitationPhrases(text);
+  return buildCitationChips(render(extracted.text), extracted.phrases);
+}
+
 // Phase-1 citation convention agreed with the prompts: a key point may end
 // with `⟦cite:原文短句⟧` (legacy prompts saved before this change may still
 // emit `⟦引用:原文短句⟧`, so both prefixes are accepted). Markers are
@@ -119,7 +141,6 @@ function loadMarkdownRenderer(): Promise<(text: string) => string> {
 // and re-inserted as clickable chips after parsing. Clicking a chip scrolls
 // back to the phrase in the page.
 const CITATION_PATTERN = /⟦(?:引用|cite):([^⟧]+)⟧/g;
-const CITATION_PLACEHOLDER_PATTERN = /⟦kuai-cite:(\d+)⟧/g;
 
 export function extractCitationPhrases(source: string): { text: string; phrases: string[] } {
   const phrases: string[] = [];
@@ -143,7 +164,14 @@ export function citationMarkersToQuotes(source: string): string {
 }
 
 export function buildCitationChips(html: string, phrases: string[]): string {
-  return html.replace(CITATION_PLACEHOLDER_PATTERN, (_match, rawIndex: string) => {
+  // Single pass over tags OR placeholders. A placeholder that survived inside
+  // an attribute (a model that wrote `[x](⟦cite:…⟧)` puts one in the href)
+  // must not have the chip markup spliced into the attribute value, or the tag
+  // is torn apart. Matching whole tags first and leaving them untouched, and
+  // never rescanning a replacement, keeps substitution in text context only.
+  return html.replace(/<[^>]*>|⟦kuai-cite:(\d+)⟧/g, (match, rawIndex: string | undefined) => {
+    if (rawIndex === undefined) return match;
+
     const phrase = phrases[Number(rawIndex)];
     if (!phrase) return '';
     const display = phrase.length > 60 ? `${phrase.slice(0, 60)}…` : phrase;
@@ -473,14 +501,12 @@ export const MessageResponse = memo(
 
     const renderMarkdown = useCallback(() => {
       const text = childrenRef.current;
-      loadMarkdownRenderer().then((render) => {
+      // Citation markers are swapped out before parsing so phrases containing
+      // markdown characters (& < > " *) survive untouched, then swapped back
+      // in on the rendered HTML -- see renderMarkdownToHtml.
+      void renderMarkdownToHtml(text).then((html) => {
         if (!isMountedRef.current) return;
-        // Swap citation markers out before parsing so phrases containing
-        // markdown characters (& < > " *) survive untouched, then swap the
-        // chips back in on the rendered HTML.
-        const extracted = extractCitationPhrases(text);
-        const parsed = render(extracted.text);
-        setHtml(buildCitationChips(parsed, extracted.phrases));
+        setHtml(html);
         // TEMPORARY timing instrumentation (first markdown paint handed to React).
         if (text) markTiming('首次渲染到面板');
       });
@@ -566,6 +592,10 @@ export const MessageResponse = memo(
 
     return (
       <div
+        // Spread FIRST: the escaping pipeline and the delegated citation
+        // handler are owned by this component, so a caller-supplied prop must
+        // never be able to override them at runtime.
+        {...props}
         className={cn(
           'kuai-markdown size-full selection:bg-primary/15',
           className
@@ -573,7 +603,6 @@ export const MessageResponse = memo(
         dangerouslySetInnerHTML={{ __html: html || `<p>${escapeHtml(children)}</p>` }}
         onClick={handleCitationInteraction}
         onKeyDown={handleCitationInteraction}
-        {...props}
       />
     );
   },

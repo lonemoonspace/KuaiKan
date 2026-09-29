@@ -1,8 +1,8 @@
-import type { ModelConfigItem } from '@/constants/model-settings';
+import type { PublicModelConfigItem } from '@/constants/model-settings';
 
 interface UsageDisplayProps {
   messages: any[];
-  currentModel?: ModelConfigItem;
+  currentModel?: PublicModelConfigItem;
 }
 
 export function UsageDisplay({ messages, currentModel }: UsageDisplayProps) {

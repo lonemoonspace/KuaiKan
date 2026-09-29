@@ -4,7 +4,6 @@
 
 const UI_MESSAGES = {
   common: {
-    allChangesSaved: '所有更改均已保存。',
     back: '返回',
     loadingSettings: '正在加载设置...',
     off: '关闭',
@@ -13,7 +12,7 @@ const UI_MESSAGES = {
     saved: '已保存',
     saving: '保存中',
     success: '成功',
-    unsavedChanges: '有未保存的更改',
+    confirmLeaveUnsaved: '有未保存的更改，确定要离开吗？',
     unknownError: '发生未知错误，请重试',
     collapse: '收起',
     more: '更多...',
@@ -30,6 +29,8 @@ const UI_MESSAGES = {
     noModelConfigured: '还没有配置模型，请先在设置中添加。',
     noPromptConfigured: '没有可用的提示词，请先在设置中创建。',
     noPageContent: '页面内容尚未就绪，请稍后重试。',
+    stopTimedOut: '上一次总结仍未停下，请稍后重试。',
+    settingsUnavailable: '设置读取失败，请刷新页面后重试。',
 
     tokenViewerInfoTip: '此界面仅用于可视化分词效果。在此处的拖动调节不会改变实际发送给大语言模型的文本内容。',
     calculating: '计算中...',
@@ -133,6 +134,15 @@ const UI_MESSAGES = {
     duplicatedToast: '模型已复制。',
     duplicateFailed: '模型复制失败。',
     defaultChangedFailed: '默认模型切换失败。',
+    exportIncludeSecretsConfirm:
+      '导出的文件默认不包含 API Key 与自定义 Headers。\n\n只在确定文件会安全存放时才选择“确定”以包含凭据。',
+    exportedToast: (count: number) => `已导出 ${count} 个模型配置（不含 API Key）。`,
+    exportedWithSecretsToast: (count: number) => `已导出 ${count} 个模型配置（含 API Key）。`,
+    exportFailed: '导出失败。',
+    importedToast: (count: number) => `已导入 ${count} 个模型配置。`,
+    importedPartialToast: (count: number, rejected: number) =>
+      `已导入 ${count} 个模型配置，${rejected} 个无法识别已被跳过。`,
+    importFailed: '导入失败。',
   },
   pageExtraction: {
     method: {
@@ -207,7 +217,6 @@ const UI_MESSAGES = {
     pageUnsupported: '当前页面暂不支持内容提取',
     openOptions: '设置',
     model: '模型',
-    prompt: '提示词',
     summary: '总结',
     page: '页面',
     openPanelAndStartSummary: '打开总结面板并立即开始总结',
@@ -216,6 +225,8 @@ const UI_MESSAGES = {
     copySuccess: '已复制页面内容到剪切板',
     copyFailed: '复制失败',
     invokeSummaryFailed: '无法触发总结',
+    defaultModelFailed: '默认模型切换失败。',
+    modelSwitchFailed: '模型切换失败。',
   },
 };
 

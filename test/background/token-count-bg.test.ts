@@ -48,4 +48,24 @@ describe('truncateByTokens', () => {
     const withExplicitFront = await truncateByTokens(LONG_TEXT, 10, 'front');
     expect(withDefault).toBe(withExplicitFront);
   });
+
+  // A negative budget used to reach `tokens.slice(0, maxTokens)`, which keeps
+  // everything *except* the last few tokens -- the opposite of truncating --
+  // and a fractional budget produced a fractional slice index.
+  it('returns empty text for a negative budget instead of keeping everything but the tail', async () => {
+    await expect(truncateByTokens(LONG_TEXT, -3, 'front')).resolves.toBe('');
+    await expect(truncateByTokens(LONG_TEXT, -3, 'back')).resolves.toBe('');
+    await expect(truncateByTokens(LONG_TEXT, -3, 'middle')).resolves.toBe('');
+  });
+
+  it('returns empty text for a zero budget rather than the middle marker alone', async () => {
+    await expect(truncateByTokens(LONG_TEXT, 0, 'middle')).resolves.toBe('');
+    await expect(truncateByTokens(LONG_TEXT, Number.NaN, 'front')).resolves.toBe('');
+  });
+
+  it('floors a fractional budget instead of slicing on a fraction', async () => {
+    const fractional = await truncateByTokens(LONG_TEXT, 10.9, 'front');
+    const floored = await truncateByTokens(LONG_TEXT, 10, 'front');
+    expect(fractional).toBe(floored);
+  });
 });

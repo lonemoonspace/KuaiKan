@@ -1,5 +1,6 @@
 import type { SummaryInputExceedBehaviour } from '@/constants/general-settings';
 import { onMessage } from '@/lib/messaging';
+import { assertTrustedSender } from '@/lib/background-trust';
 import {
   INPUT_TOKEN_COUNT_MODEL,
   type InputTokenCountResult,
@@ -37,10 +38,20 @@ function nowMs() {
 }
 
 function loadTokenizer() {
-  tokenizerPromise ??= import('gpt-tokenizer/model/gpt-5').then((tokenizer) => {
-    markTokenizerLoaded();
-    return tokenizer;
-  });
+  tokenizerPromise ??= import('gpt-tokenizer/model/gpt-5').then(
+    (tokenizer) => {
+      markTokenizerLoaded();
+      return tokenizer;
+    },
+    (error) => {
+      // `??=` assigns before the import settles, so a rejection would otherwise
+      // stay cached and fail every token RPC for the rest of this worker's
+      // life (a recycled service worker or one transient resource read is
+      // enough). Clear it so the next call retries.
+      tokenizerPromise = null;
+      throw error;
+    },
+  );
   return tokenizerPromise;
 }
 
@@ -60,6 +71,11 @@ function applyTruncationStrategy(
   maxTokens: number,
   behaviour: SummaryInputExceedBehaviour,
 ): string {
+  // A zero budget has no meaningful slice: `slice(0, -0)` would keep the whole
+  // array and `middle` would emit its marker alone. Every strategy returns
+  // nothing instead.
+  if (maxTokens <= 0) return '';
+
   if (behaviour === 'back') {
     return tokenizer.decode(tokens.slice(tokens.length - maxTokens));
   }
@@ -81,6 +97,18 @@ function applyTruncationStrategy(
   return tokenizer.decode(tokens.slice(0, maxTokens));
 }
 
+/**
+ * The strategies index token arrays directly, so the budget has to be a
+ * non-negative integer before it reaches them: a negative value makes `front`
+ * slice from the tail (`slice(0, -3)` keeps everything but the last three
+ * tokens) and makes the reported truncated count negative. Normalizing here
+ * protects every caller, including one that forgets the `> 0` guard.
+ */
+function normalizeMaxTokens(maxTokens: number): number {
+  if (!Number.isFinite(maxTokens)) return 0;
+  return Math.max(0, Math.floor(maxTokens));
+}
+
 export async function truncateByTokens(
   text: string,
   maxTokens: number,
@@ -93,20 +121,27 @@ export async function truncateByTokens(
     return text;
   }
 
+  const budget = normalizeMaxTokens(maxTokens);
+
+  if (budget === 0) {
+    logger.info('[TokenCount] Truncated: budget is 0, returning empty text.');
+    return '';
+  }
+
   const tokenizer = await loadTokenizer();
   const tokens = tokenizer.encode(text);
   const originalLength = text.length;
   const originalTokens = tokens.length;
 
-  if (originalTokens <= maxTokens) {
+  if (originalTokens <= budget) {
     logger.info(`[TokenCount] No truncation needed: String length ${originalLength}, Tokens ${originalTokens}`);
     return text;
   }
 
-  const truncatedText = applyTruncationStrategy(tokenizer, tokens, maxTokens, behaviour);
+  const truncatedText = applyTruncationStrategy(tokenizer, tokens, budget, behaviour);
   const truncatedLength = truncatedText.length;
 
-  logger.info(`[TokenCount] Truncated (${behaviour}): String length ${originalLength} -> ${truncatedLength}, Tokens ${originalTokens} -> ${maxTokens}`);
+  logger.info(`[TokenCount] Truncated (${behaviour}): String length ${originalLength} -> ${truncatedLength}, Tokens ${originalTokens} -> ${budget}`);
 
   return truncatedText;
 }
@@ -142,6 +177,7 @@ export async function truncateByTokensWithTiming(
   maxTokens: number,
   behaviour: SummaryInputExceedBehaviour = 'front',
 ): Promise<TruncateByTokensResult> {
+  const budget = normalizeMaxTokens(maxTokens);
   const loadStart = nowMs();
   const tokenizer = await loadTokenizer();
   const loadMs = nowMs() - loadStart;
@@ -152,9 +188,9 @@ export async function truncateByTokensWithTiming(
   let truncatedText = input;
   let truncatedTokenCount = originalTokenCount;
 
-  if (tokens.length > maxTokens && behaviour !== 'nothing') {
-    truncatedText = applyTruncationStrategy(tokenizer, tokens, maxTokens, behaviour);
-    truncatedTokenCount = Math.min(maxTokens, originalTokenCount);
+  if (originalTokenCount > budget && behaviour !== 'nothing') {
+    truncatedText = applyTruncationStrategy(tokenizer, tokens, budget, behaviour);
+    truncatedTokenCount = Math.min(budget, originalTokenCount);
   }
   const calculateMs = nowMs() - calculateStart;
 
@@ -196,9 +232,26 @@ export async function splitTokensWithTiming(
 }
 
 export function registerTokenCountMessages() {
-  onMessage('countInputTokens', async (msg) => countInputTokens(msg.data.text));
-  onMessage('countInputTokensWithTiming', async (msg) => countInputTokensWithTiming(msg.data.text));
-  onMessage('truncateByTokens', async (msg) => truncateByTokens(msg.data.text, msg.data.maxTokens, msg.data.behaviour));
-  onMessage('truncateByTokensWithTiming', async (msg) => truncateByTokensWithTiming(msg.data.text, msg.data.maxTokens, msg.data.behaviour));
-  onMessage('splitTokensWithTiming', async (msg) => splitTokensWithTiming(msg.data.text));
+  // Every one of these is a runtime-level RPC that only this extension's own
+  // contexts may call; see lib/background-trust.ts.
+  onMessage('countInputTokens', async (msg) => {
+    assertTrustedSender(msg.sender);
+    return countInputTokens(msg.data.text);
+  });
+  onMessage('countInputTokensWithTiming', async (msg) => {
+    assertTrustedSender(msg.sender);
+    return countInputTokensWithTiming(msg.data.text);
+  });
+  onMessage('truncateByTokens', async (msg) => {
+    assertTrustedSender(msg.sender);
+    return truncateByTokens(msg.data.text, msg.data.maxTokens, msg.data.behaviour);
+  });
+  onMessage('truncateByTokensWithTiming', async (msg) => {
+    assertTrustedSender(msg.sender);
+    return truncateByTokensWithTiming(msg.data.text, msg.data.maxTokens, msg.data.behaviour);
+  });
+  onMessage('splitTokensWithTiming', async (msg) => {
+    assertTrustedSender(msg.sender);
+    return splitTokensWithTiming(msg.data.text);
+  });
 }

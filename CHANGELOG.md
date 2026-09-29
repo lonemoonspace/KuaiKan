@@ -1,4 +1,37 @@
 # Changelog
+## [3.1.2]
+本版是一次完整的代码审查修复（报告见 `CODE_REVIEW_v3.1.1.md`），含一处已复现的注入缺陷与两处会丢用户数据的问题。
+
+1. fix(security): 模型输出里的图片 alt 文本未转义即可进入 `dangerouslySetInnerHTML`，`![<img src=x onerror=…>](javascript:…)` 能注入任意 HTML/JS（已用 marked 18 复现）。现将该分支改为转义输出，并**不再渲染模型输出中的任何图片**——图片本身没有信息增量，却会让被总结的页面驱动一次真实外发请求（相对路径还会命中被访站点）
+2. fix(security): 面板不再读取整行模型配置，只接收展示所需字段的投影，`apiKey` / `headers` / `extraBody` 不再进入页面上下文；图标统一经 `runtime.getURL` 解析
+3. fix(data): 设置写入不再删除「认不出」的行。此前加载对坏行宽容、写回却按解析结果整表覆盖，改一个模型就会永久删掉其它无法解析的行（含 API Key）。现在这些行原样保留，下次写入继续带着
+4. fix(data): 模型配置导入按**实际落盘数量**报数，无法识别的行会明确提示；若所有行都无法识别则整体拒绝并保留原有配置，不再「提示导入成功但列表被清空」
+5. fix(data): 数据库迁移改为**先写入（含版本标记）再清理旧键**，清理失败只记日志，避免「救援出来的配置在写入前被删掉」
+6. fix(data): 模型/Prompt 的所有写操作（面板、popup、设置页共 14 处）统一经后台排队执行。此前各上下文直接读写同一个整表键，并发操作会互相覆盖、丢更新
+7. fix(security): 导出模型配置默认**剔除 `apiKey` 与自定义 Headers**，要带上凭据需显式确认
+8. fix(provider): Ollama 现在走 OpenAI 兼容端点（`createOpenAICompatible`）。原先强转的 `ollama-ai-provider` 只实现 specification v1，AI SDK 6 在运行时必然抛 `AI_UnsupportedModelVersionError`，该 provider 实际完全不可用；旧的 `.../api` base URL 会在读取时自动改写为 `.../v1`
+9. fix: LLM 流新增 120 秒空转看门狗：上游只连接不吐数据时会中止并给出超时提示，不再无限转圈（分类器此前准备的超时文案没有任何代码路径能产出）
+10. fix: 模型返回空内容（只有 start/finish 帧）时判定为失败。此前会当成成功，面板进入「已总结」状态但正文空白，并把这条空消息写进快照
+11. fix: 分词器加载失败不再被永久缓存，下次调用会重试（此前一次失败会让该 worker 生命周期内所有 token 计数/裁剪全部失效）
+12. fix: 提示词在设置页被修改或删除后，已打开的面板会同步刷新；当前提示词被删除时回落到默认项，不再继续用已删除的模板
+13. fix: `dom-heuristic` 提取不到正文时不再返回「空文章对象」（会被当成有效内容并发出空 prompt），两种方式都无正文时统一报「没有内容」
+14. fix: background 不再把 provider 的 HTML 错误页回传到面板；错误日志只保留 `name/status/message`，不再把整页 prompt 打进控制台
+15. fix: 右键菜单/popup 触发总结时，若页面无正文或设置读取失败会明确提示；重启总结等待超时也会提示，不再静默无响应
+16. fix: 设置页保存失败只回滚该开关（此前会连带回滚同一时刻已保存成功的其它开关）；默认模型/提示词切换失败不再静默弹回
+17. fix: 数值输入（价格、最大输入 Token）不再把 `0` 与「未设置」混为一谈，`0.000001` 这类输入可以被正常键入
+18. fix: headers 的 JSON 值必须是字符串，设置页在提交前校验，不再「保存成功但该 header 被静默丢弃」
+19. fix: 两个编辑器增加未保存离开确认（此前改到一半点返回或侧栏会静默丢失）
+20. fix: 裁剪 RPC 归一化 `maxTokens`（负数此前会反向保留尾部之外的全部内容），Token 上限的 0.9 系数不再塌缩成「无上限」
+21. fix: 错误分类收窄：不再把所有 404 都提示「检查模型 ID」（Base URL 路径错误也是 404，文案已改为同时提示两者），provider 正文里出现 "permission" 不再指向「扩展站点权限」
+22. fix: 面板宿主被页面清空/重建后会自动重新挂载；悬浮球拖拽改用 Pointer Events + `setPointerCapture`（含 `pointercancel`），不再修改宿主页面 `<body>` 的 class；面板在窗口缩小后重新校验标题栏可达性并夹取尺寸
+23. change(security): 权限去掉 `activeTab`、`scripting`（前者无使用者，后者的探针改用 `ping`，并预先识别受限页面不再白等 2.3 秒）；`web_accessible_resources` 收窄为 `['icon/*','llm-icons/*']` 并启用 `use_dynamic_url`；删除零引用的 `public/wxt.svg`
+24. change: 后台所有消息入口与 bridge 端口校验发送方必须是本扩展（纵深防御，`lib/background-trust.ts`）
+25. change: 引用标记（`⟦cite:…⟧`）只在文本上下文还原为 chip，不再可能插进链接/图片的属性内部
+26. change(deps): 移除未使用的 `picomatch`（站点定制功能遗留）与 `ollama-ai-provider`；`package.json` 改为 `private: true`
+27. change(build): 产物体积分析改为 `ANALYZE=1 npm run build` 才生成（此前每次构建都重写一个 ~1MB 的 `stats.html`）
+28. change(ci): 新增 `.github/workflows/quality.yml`，push/PR 上跑 compile + test + lint；lint 三条规则由 warn 提为 error
+29. test: 用例从 139 增至 184，新增针对渲染管线（含上述 XSS 回归）、空转看门狗、存储坏行保留、迁移先写后删、Prompt 存储等覆盖
+
 ## [3.1.1]
 1. fix: 关闭 Vite 的 modulepreload，消除 popup / 设置页控制台里 Chrome 的「cross-world extension resource mismatch」预加载警告（扩展资源都读本地磁盘，预加载本无收益）
 

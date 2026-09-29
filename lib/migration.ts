@@ -241,14 +241,27 @@ export async function runFullMigration(): Promise<MigrationResult> {
 
     // Everything else stays exactly where it is — no full-store rewrite.
 
-    if (keysToRemove.length > 0) {
-      await browser.storage.local.remove(keysToRemove);
-      logs.push(`Cleaned up obsolete keys: ${keysToRemove.join(', ')}`);
-    }
-
+    // Write before removing. The recovered keys above only exist in memory
+    // until this `set` lands, and MV3 can recycle the worker at any await; if
+    // the removal ran first and the write then failed (a storage quota error is
+    // not far-fetched for a 10MB store with no `unlimitedStorage`), the data
+    // that was just recovered would be gone for good. The version marker rides
+    // along with the same write, so a crash after the write and before the
+    // removal only leaves harmless duplicate `local:` keys behind.
     keysToSet[MIGRATION_VERSION_RAW_KEY] = CURRENT_MIGRATION_VERSION;
     await browser.storage.local.set(keysToSet);
     logs.push(`Saved migrated keys: ${Object.keys(keysToSet).join(', ')}`);
+
+    if (keysToRemove.length > 0) {
+      try {
+        await browser.storage.local.remove(keysToRemove);
+        logs.push(`Cleaned up obsolete keys: ${keysToRemove.join(', ')}`);
+      } catch (error) {
+        // The user's data is already safe; a leftover key is cosmetic.
+        logs.push(`Failed to clean up obsolete keys: ${String(error)}`);
+        logger.warn('Migration could not remove obsolete keys:', error);
+      }
+    }
   } catch (error) {
     ok = false;
     logs.push(`Migration error: ${String(error)}`);
