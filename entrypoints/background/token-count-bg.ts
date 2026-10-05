@@ -56,6 +56,13 @@ function loadTokenizer() {
 }
 
 /**
+ * Inserted between the kept head and tail of a `middle` truncation. Exported so
+ * tests can measure its token cost instead of hard-coding it.
+ */
+export const MIDDLE_TRUNCATION_MARKER =
+  '\n\n[... 内容已截断 / content truncated ...]\n\n';
+
+/**
  * Slice an over-long token array according to the configured strategy.
  *
  * - front:   keep the head of the document (previous default).
@@ -81,9 +88,13 @@ function applyTruncationStrategy(
   }
 
   if (behaviour === 'middle') {
-    const marker = '\n\n[... 内容已截断 / content truncated ...]\n\n';
+    const marker = MIDDLE_TRUNCATION_MARKER;
     // The marker counts against the budget so the result never exceeds it.
     const budget = Math.max(0, maxTokens - tokenizer.countTokens(marker));
+    // The marker alone costs ~12 tokens, so a budget below that leaves nothing:
+    // returning the bare marker (the previous behaviour) sent *more* tokens
+    // than the caller asked for -- exactly what truncation must prevent.
+    if (budget === 0) return '';
     const headTokens = Math.floor(budget / 2);
     const tailTokens = budget - headTokens;
     const head = tokenizer.decode(tokens.slice(0, headTokens));
@@ -206,6 +217,16 @@ export async function truncateByTokensWithTiming(
   };
 }
 
+/**
+ * Upper bound on the pieces `splitTokensWithTiming` returns. The viewer renders
+ * one span per piece and each piece is a structured-cloned RPC payload, so an
+ * uncapped 100k-token article froze the content script (and, near the session
+ * quota, the worker). The window covers the head of the document, which is what
+ * the truncation strategies keep an eye on, and the viewer reports the real
+ * total alongside it.
+ */
+export const MAX_TOKEN_PIECES = 4_000;
+
 export async function splitTokensWithTiming(
   input: string,
 ): Promise<SplitTokensResult> {
@@ -215,15 +236,22 @@ export async function splitTokensWithTiming(
 
   const calculateStart = nowMs();
   const ids = tokenizer.encode(input);
-  const pieces = ids.map((id) => ({
+  const totalTokenCount = ids.length;
+  const pieces = ids.slice(0, MAX_TOKEN_PIECES).map((id) => ({
     id,
     text: tokenizer.decode([id]),
   }));
+  // Reported so the viewer can mirror a `middle` truncation exactly: the
+  // strategy spends part of the budget on this marker before splitting the
+  // remaining budget between head and tail.
+  const middleMarkerTokenCount = tokenizer.countTokens(MIDDLE_TRUNCATION_MARKER);
   const calculateMs = nowMs() - calculateStart;
 
   return {
     model: INPUT_TOKEN_COUNT_MODEL,
     pieces,
+    totalTokenCount,
+    middleMarkerTokenCount,
     timing: {
       calculateMs,
       loadMs,

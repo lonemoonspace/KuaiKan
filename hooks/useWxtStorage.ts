@@ -82,6 +82,7 @@ export default function useWxtStorage<T>(key: StorageItemKey | null | undefined,
           ? (newValue as (prev: T) => T)(valueRef.current)
           : newValue;
 
+      const previousValue = valueRef.current;
       valueRef.current = resolvedValue;
       setValue(resolvedValue);
 
@@ -91,6 +92,16 @@ export default function useWxtStorage<T>(key: StorageItemKey | null | undefined,
         await storage.setItem(key as StorageItemKey, resolvedValue);
       } catch (error) {
         logger.error(`[useWxtStorage] Failed to set storage key "${key}":`, error);
+
+        // Put the previous value back: the optimistic update above would
+        // otherwise leave the UI showing a value that never reached storage
+        // (until some future read happened to correct it). Skip the rollback if
+        // something newer was set while this write was in flight — that value
+        // is the current truth.
+        if (valueRef.current === resolvedValue) {
+          valueRef.current = previousValue;
+          setValue(previousValue);
+        }
       }
     },
     [key]

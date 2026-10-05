@@ -23,6 +23,18 @@ describe('normalizeForMatch', () => {
     expect(text).toBe('x');
     expect(map).toEqual([2]);
   });
+
+  it('folds ASCII case and drops ASCII punctuation with correct offsets', () => {
+    const { text, map } = normalizeForMatch('Ab-1 C');
+    expect(text).toBe('ab1c');
+    expect(map).toEqual([0, 1, 3, 5]);
+  });
+
+  it('maps a mixed ASCII/CJK/astral run back to source offsets', () => {
+    const { text, map } = normalizeForMatch('中A😀B中');
+    expect(text).toBe('中ab中');
+    expect(map).toEqual([0, 1, 4, 5]);
+  });
 });
 
 describe('findFuzzyMatches', () => {

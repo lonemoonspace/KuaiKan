@@ -80,7 +80,7 @@
 
 | 入口 | 说明 |
 |---|---|
-| `entrypoints/content/` | 注入网页的 content script，Shadow DOM 挂载总结面板和悬浮球 |
+| `entrypoints/content/` | 注入网页的 content script，Shadow DOM 挂载总结面板 |
 | `entrypoints/background/` | 后台脚本，处理右键菜单、LLM 流式调用、首次 prompt 播种 |
 | `entrypoints/popup/` | 扩展图标弹窗 |
 | `entrypoints/options/` | 设置页，管理模型、Prompt 与通用设置 |
@@ -133,10 +133,10 @@ ServerFrame:  { type: 'chunk'; chunk: UIMessageChunk } | { type: 'error'; messag
 | `local:page-text-extract-method` | `readability/dom-heuristic` | 正文提取方式 |
 | `local:log-level` | `debug/info/warn/error/silent` | 日志级别 |
 | `local:panel-font-size` | `small/medium/large` | 面板正文字号（14/16/18px 基准单位，只作用于阅读区，见 `PANEL_FONT_SIZE_REM_PX`） |
-| `local:enable-floating-ball` 等布尔开关 | `boolean` | 各开关（定义见 `GENERAL_SETTING_DEFINITIONS`，含 `enable-tokan-usage-view`——拼写 TOKAN，保持兼容勿改） |
+| `local:enable-auto-begin-summary` 等布尔开关 | `boolean` | 各开关（定义见 `GENERAL_SETTING_DEFINITIONS`，含 `enable-tokan-usage-view`——拼写 TOKAN，保持兼容勿改） |
 | `local:migration-version` | `number` | 迁移幂等标记（`lib/migration.ts`） |
 
-动态键：`local:<storageKey>-floating-state`（`PanelContainer`）、`local:right-floating-ball-top-<key>`（`RightFloatingBallContainer`）。
+动态键：`local:<storageKey>-floating-state`（`PanelContainer`）。
 
 面板快照：`session:panel-snapshots-<tabId>`（`browser.storage.session`，仅内存、重启浏览器即清空），
 `Record<pageKey, { open?, messages, updatedAt }>`（`open` 只在用户手动开关面板时写入，未写入时由「新页面自动打开面板」设置决定），每个标签页最多 20 个页面（LRU），标签页关闭时由后台删除。

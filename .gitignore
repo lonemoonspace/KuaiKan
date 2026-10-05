@@ -1,4 +1,7 @@
 reference
+
+# WXT 会读取 .env 并把 WXT_* 值内联进构建产物；凭据既不应提交，也不应被打进 zip。
+.env*
 # Logs
 logs
 *.log

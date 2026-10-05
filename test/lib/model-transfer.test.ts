@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildModelExportFile,
+  MAX_MODEL_IMPORT_ROWS,
   mergeImportedModels,
+  MODEL_EXPORT_FILE_VERSION,
   parseModelExportFile,
 } from '@/lib/model-transfer';
 import {
@@ -163,12 +165,48 @@ describe('parseModelExportFile', () => {
   it('drops rows that are not model configs', () => {
     const parsed = parseModelExportFile({
       type: 'kuai-kan-models',
+      version: MODEL_EXPORT_FILE_VERSION,
       models: [local[0], { id: 'broken' }, 'nope'],
     });
 
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     expect(parsed.models).toHaveLength(1);
+  });
+
+  it('rejects an export written by a newer, unsupported format version', () => {
+    const parsed = parseModelExportFile({
+      type: 'kuai-kan-models',
+      version: MODEL_EXPORT_FILE_VERSION + 1,
+      models: [local[0]],
+    });
+
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error).toContain(String(MODEL_EXPORT_FILE_VERSION + 1));
+  });
+
+  it('rejects an export that carries the type marker but no usable version', () => {
+    const parsed = parseModelExportFile({
+      type: 'kuai-kan-models',
+      models: [local[0]],
+    });
+
+    expect(parsed.ok).toBe(false);
+  });
+
+  it('refuses a file with more rows than the import cap', () => {
+    const parsed = parseModelExportFile({
+      type: 'kuai-kan-models',
+      version: MODEL_EXPORT_FILE_VERSION,
+      models: Array.from({ length: MAX_MODEL_IMPORT_ROWS + 1 }, (_, index) =>
+        modelRow({ id: `m${index}` }),
+      ),
+    });
+
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error).toContain(String(MAX_MODEL_IMPORT_ROWS));
   });
 });
 
@@ -178,11 +216,16 @@ describe('buildModelExportFile', () => {
 
     expect(file.models[0].apiKey).toBe('');
     expect(file.models[0].headers).toEqual({});
+    // `extraBody` is free-form JSON and is treated as sensitive everywhere else
+    // (`toPublicModelConfig`), so it must not ride along in a "no secrets"
+    // export either.
+    expect(file.models[0].extraBody).toEqual({});
     expect(file.models[0]).not.toBe(local[0]);
     expect(file.type).toBe('kuai-kan-models');
     expect(file.defaultModelId).toBeNull();
     // The source rows are untouched.
     expect(local[0].apiKey).toBe('local-secret');
+    expect(local[0].extraBody).toEqual({ thinking: { type: 'disabled' } });
   });
 
   it('includes credentials only when explicitly asked to', () => {
@@ -190,5 +233,6 @@ describe('buildModelExportFile', () => {
 
     expect(file.models[0].apiKey).toBe('local-secret');
     expect(file.models[0].headers).toEqual({ 'x-local': '1' });
+    expect(file.models[0].extraBody).toEqual({ thinking: { type: 'disabled' } });
   });
 });

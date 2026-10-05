@@ -6,7 +6,7 @@
 
 ## 简介
 
-KuaiKan 是一个纯本地运行的网页总结扩展：不依赖后端服务、不采集任何遥测数据。悬浮球或 popup
+KuaiKan 是一个纯本地运行的网页总结扩展：不依赖后端服务、不采集任何遥测数据。右键菜单或 popup
 一键触发，调用你自己配置的模型（OpenAI / Anthropic / Google / Ollama / 任意 OpenAI 兼容接口等）
 生成结构化总结，支持自定义 Prompt 模板、站点定制提取规则、超长内容裁剪策略等。
 
@@ -34,7 +34,7 @@ npm run build
 ## 版本归档
 
 每个发布版本的 zip 存放在 `release/<version>/`，用于回滚或在另一台机器上安装
-（在 `chrome://extensions` 里把 zip 解压后按上面的步骤加载）。当前版本 **3.1.0**。
+（在 `chrome://extensions` 里把 zip 解压后按上面的步骤加载）。当前版本 **3.1.3**。
 
 发布步骤见 [AGENTS.md](AGENTS.md) 的「构建与发布」一节。
 

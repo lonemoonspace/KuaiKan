@@ -18,7 +18,16 @@ export interface ProtocolMap {
   /** Seeds the default prompt library exactly once (handled single-flight in the background). */
   seedPromptLibrary(): Promise<{ seeded: boolean }>;
 
-  /** Per-tab, per-page panel state (open flag + summary), kept in storage.session by the background */
+  /**
+   * Per-tab, per-page panel state (open flag + summary), kept in storage.session
+   * by the background.
+   *
+   * Note the value types below are the *return value*, not the handler's
+   * promise shape: `@webext-core/messaging` types `sendMessage` as
+   * `Promise<GetReturnType<ProtocolMap[K]>>` and lets a handler return either
+   * `T` or `Promise<T>`. Declaring `Promise<T>` here would double-wrap every
+   * client call and reject the synchronous handlers in `panel-snapshot-bg.ts`.
+   */
   loadPanelSnapshot(input: { pageKey: string }): PanelSnapshot | null;
   savePanelSnapshot(input: { pageKey: string; patch: PanelSnapshotPatch }): void;
 

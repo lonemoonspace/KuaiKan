@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Info } from 'lucide-react';
 import { sendMessage } from '@/lib/messaging';
+import { focusNextInside } from '@/lib/focus-trap';
 import { getUiMessages } from '@/lib/i18n';
 import type { TokenPiece } from '@/lib/token-count';
 import type { SummaryInputExceedBehaviour } from '@/constants/general-settings';
@@ -49,6 +50,7 @@ export function isTokenKept(
   total: number,
   keep: number,
   behaviour: SummaryInputExceedBehaviour,
+  middleMarkerTokens = 0,
 ): boolean {
   if (behaviour === 'nothing' || total <= keep) return true;
 
@@ -57,8 +59,11 @@ export function isTokenKept(
   }
 
   if (behaviour === 'middle') {
-    const headTokens = Math.floor(keep / 2);
-    const tailTokens = keep - headTokens;
+    // The background pays for the "content truncated" marker out of the same
+    // budget before splitting it, so the kept head/tail are that much narrower.
+    const budget = Math.max(0, keep - middleMarkerTokens);
+    const headTokens = Math.floor(budget / 2);
+    const tailTokens = budget - headTokens;
     return index < headTokens || index >= total - tailTokens;
   }
 
@@ -67,9 +72,43 @@ export function isTokenKept(
 
 export function TokenViewerModal({ isOpen, onClose, textContent, maxInputTokens, behaviour = 'front' }: TokenViewerModalProps) {
   const uiMessages = getUiMessages();
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
   const [pieces, setPieces] = useState<TokenPiece[]>([]);
+  const [totalTokenCount, setTotalTokenCount] = useState(0);
+  const [middleMarkerTokens, setMiddleMarkerTokens] = useState(0);
   const [loading, setLoading] = useState(false);
   const [sliderValue, setSliderValue] = useState(maxInputTokens);
+
+  // Move focus into the viewer when it opens and close it on Escape. The
+  // viewer covers the panel but key events go to whatever has focus, so
+  // without this Escape reached the page instead (and the page's own Escape
+  // handlers ran while the viewer stayed open).
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const node = containerRef.current;
+    node?.focus();
+
+    if (!node) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose();
+        return;
+      }
+
+      // Keep Tab inside the viewer: it sits in the content script's shadow
+      // root, so without a trap focus would walk out into the page behind it.
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        focusNextInside(node, event.shiftKey);
+      }
+    };
+
+    node.addEventListener('keydown', handleKeyDown);
+    return () => node.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -80,8 +119,10 @@ export function TokenViewerModal({ isOpen, onClose, textContent, maxInputTokens,
       .then((res) => {
         if (!active) return;
         setPieces(res.pieces);
-        const realTokens = res.pieces.length;
-        setSliderValue(maxInputTokens === 0 ? realTokens : Math.min(realTokens, maxInputTokens));
+        const total = res.totalTokenCount ?? res.pieces.length;
+        setTotalTokenCount(total);
+        setMiddleMarkerTokens(res.middleMarkerTokenCount ?? 0);
+        setSliderValue(maxInputTokens === 0 ? total : Math.min(total, maxInputTokens));
         setLoading(false);
       })
       .catch(e => {
@@ -94,11 +135,18 @@ export function TokenViewerModal({ isOpen, onClose, textContent, maxInputTokens,
 
   if (!isOpen) return null;
 
-  const realTokens = pieces.length;
+  const realTokens = totalTokenCount || pieces.length;
+  const isWindowed = pieces.length < realTokens;
   const maxSlider = Math.max(realTokens, maxInputTokens);
 
   return (
-    <div className="absolute inset-0 z-50 bg-card text-card-foreground flex flex-col pointer-events-auto rounded-[inherit] overflow-hidden">
+    <div
+      aria-label={uiMessages.content.tokenPreview}
+      className="absolute inset-0 z-50 bg-card text-card-foreground flex flex-col pointer-events-auto rounded-[inherit] overflow-hidden outline-none"
+      ref={containerRef}
+      role="dialog"
+      tabIndex={-1}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-card shrink-0 z-10">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -123,22 +171,29 @@ export function TokenViewerModal({ isOpen, onClose, textContent, maxInputTokens,
       <div className="flex-1 overflow-auto p-4 leading-[1.6] whitespace-pre-wrap font-mono text-sm text-foreground break-words bg-card">
         {loading ? (
           <div className="flex items-center justify-center h-full text-muted-foreground">
-            <div className="animate-pulse">Loading tokens...</div>
+            <div className="animate-pulse">{uiMessages.content.loadingTokens}</div>
           </div>
         ) : (
-          pieces.map((p, i) => {
-            const isExcluded = !isTokenKept(i, pieces.length, sliderValue, behaviour);
-            const colorClass = TOKEN_COLORS[(i * 7) % TOKEN_COLORS.length];
-            return (
-              <span 
-                key={i} 
-                className={`relative px-[0.5px] rounded-[1px] transition-colors duration-150 ${isExcluded ? 'bg-muted text-muted-foreground/50' : colorClass}`}
-                title={`Token ID: ${p.id}`}
-              >
-                {p.text}
-              </span>
-            );
-          })
+          <>
+            {isWindowed && (
+              <div className="sticky top-0 z-10 mb-2 rounded border border-border bg-muted px-2 py-1 text-xs font-sans text-muted-foreground">
+                {uiMessages.content.tokenPreviewWindowed}
+              </div>
+            )}
+            {pieces.map((p, i) => {
+              const isExcluded = !isTokenKept(i, realTokens, sliderValue, behaviour, middleMarkerTokens);
+              const colorClass = TOKEN_COLORS[(i * 7) % TOKEN_COLORS.length];
+              return (
+                <span 
+                  key={i} 
+                  className={`relative px-[0.5px] rounded-[1px] transition-colors duration-150 ${isExcluded ? 'bg-muted text-muted-foreground/50' : colorClass}`}
+                  title={uiMessages.content.tokenIdLabel(p.id)}
+                >
+                  {p.text}
+                </span>
+              );
+            })}
+          </>
         )}
       </div>
 
@@ -146,10 +201,10 @@ export function TokenViewerModal({ isOpen, onClose, textContent, maxInputTokens,
       <div className="px-4 py-3 border-t border-border bg-muted/40 shrink-0">
         <div className="flex items-center gap-3 mb-2">
           <label className="text-xs font-medium text-muted-foreground flex-1">
-            Tokens: <span className="text-primary font-bold text-sm">{sliderValue}</span> / {realTokens}
+            {uiMessages.content.tokensLabel} <span className="text-primary font-bold text-sm">{sliderValue}</span> / {realTokens}
           </label>
           <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border">
-            Max Input Limit: {maxInputTokens === 0 ? '∞' : maxInputTokens}
+            {uiMessages.content.maxInputLimitLabel}: {maxInputTokens === 0 ? '∞' : maxInputTokens}
           </span>
         </div>
         <div className="relative flex items-center h-4">

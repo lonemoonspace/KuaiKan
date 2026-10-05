@@ -1,4 +1,35 @@
 # Changelog
+## [3.1.3]
+本版是又一轮完整的代码审查修复（报告见 `CODE_REVIEW_v3.1.2.md`，基线 `5bf6408`），并**按用户要求移除悬浮球功能**。审查共列出 3 项严重、19 项中危、45+ 项低危与 7 项疑似问题，A/B 级与悬浮球全部处理，C 级按主题批量清理，测试从 184 例增至 279 例。
+
+1. change: **移除悬浮球功能**（用户确认 D1 真实存在后决定整体删除，而非修 `setPointerCapture` 逻辑）。`components/container/RightFloatingBallContainer.tsx` 删除，`enableFloatingBall` 设置项、设置页开关、`lib/i18n.ts` 的 `badgeLabel`/`hideFloatingBall`/`enableFloatingBall` 文案及 `AGENTS.md`/`README.md` 相关描述一并清理；遗留的两个存储键由迁移清理（见第 22 条）。页面内浮动面板不受影响
+2. fix: 输入预算不再只看模型上限。此前只按 `getEffectiveInputTokenLimit()` 裁剪正文，忽略了渲染后的提示词与输出预留，正文顶到上限时仍会 `context_length_exceeded`；现在先实测提示词开销，再按「上限 − 输出预留(1024) − 提示词开销 − 32」裁剪，模板本身就超限时提前报错并说明原因，超限策略为「不处理」时给出警告而不是静默发送（新增 `lib/summary-input-budget.ts` 与预算不变量单测）
+3. fix: Token 查看器不再把整篇文章的 token 都渲染出来（上限 4000 片，同时回报真实总数并提示「仅预览开头」），此前十万级 token 的文章会一次性冻结 content script；查看器对「中间截断」的保留判断改为先扣除截断标记，与后台实际行为一致（此前差约 8–11 个 token）
+4. fix: 首选提取方式拿不到正文时才惰性调用另一种方式（此前两种提取方式无条件各跑一遍，整页提取被做两次）
+5. fix: 拉取远端模型列表新增 15 秒超时与 `AbortSignal`，Base URL 不合法时给出明确提示，关闭编辑器时中止请求；不再出现「点了没反应、一直转圈」
+6. fix: 错误分类新增服务端错误（5xx 归类 `server` 且标记可重试），toast 提供「重试」动作；缺失 status 的 bridge 错误正文也能识别开头的 `[HTTP 429]`/`429`（此前 `429 Too Many Requests` 会被判成不可重试的未知错误）
+7. fix: LLM 流的错误块读取真实的 `errorText`，一次失败只回送一帧错误（此前错误块字段取错导致信息丢失，并且 `onError` 与 error chunk 会各发一帧）
+8. fix: 流式传输的 `cancel()` 走统一拆除路径，移除 port 监听器再断开（此前只 `disconnect()`，依赖 Chrome 未承诺的「同对象重发 `onDisconnect`」行为）；`postMessage` 抛错（worker 被回收 / 扩展重载）时正常报错并拆除，不再把异常从 `ReadableStream` 构造器抛出而留下死端口上的监听器
+9. fix: 「中间截断」的预算为 0 时返回空串，不再把截断标记本身当正文发出去；`openai-compatible` 不再享受「完整上限」豁免（它并不使用内置分词器，计数最不可靠却拿到 0 余量，现只给 90%）
+10. fix: Token 计数与状态栏徽标按「Token 用量视图」开关门控，关闭时不发任何计数 RPC
+11. fix: 面板快照写入不再整表读改写。此前每次节流持久化（流式输出时每秒一次）都把该标签页最多 20 个页面的完整回答重写一遍，写入量与该标签页历史成正比且逼近 `storage.session` 配额；现改为「索引 + 每页分片键」（`session:panel-snapshot-page-<tabId>-<pageKey>`），单页 128KB、单条消息片段 32KB 上限，LRU 不驱逐刚写入的页
+12. fix: 面板拖拽/缩放全部改用 Pointer Events（含 `pointercancel`、`lostpointercapture`、`button !== 0` 守卫、指针捕获）；动态内容撑出的宽度重新夹取到视口上限（此前可能超过 `max-w-[100vw]`）
+13. fix: tooltip 弹层挂到 content script 的影子根（此前 Portal 默认挂 `document.body`，在页面上下文中取不到面板的主题变量）；设置页的 select/dialog 仍按 Radix 默认留在 `document.body`
+14. fix: 设置页两个编辑器与 Token 查看器补上未保存离开拦截（`beforeunload`）、Esc 关闭与完整焦点陷阱（新增 `lib/focus-trap.ts`，含 shadow root 下的焦点归属下钻）
+15. fix: 模型配置导入限制为 8MB / 1000 行并加并发守卫；导出/导入文件声明版本号，导入时拒绝未来版本的文件（此前 v2 文件会被当 v1 静默误读）；下载后延迟 1 秒再 `revokeObjectURL`（同步撤销会让下载在 Firefox 上直接失败）
+16. fix: `dom-heuristic` 提取的胜出元素会真正剥离导航/页脚/表单等噪声与不可见节点（此前 `NOISE_SELECTOR` 只影响候选资格），块级元素之间补回换行；候选判定的量长改用 `textContent.length`（此前每个祖先层级都要跑 5 次全局正则清洗、并因 `innerText` 强制回流）
+17. fix: 新增 shadow DOM 与同源 iframe 的内容回退（`lib/page-flatten.ts`）：两种常规提取方式都拿不到正文（少于 200 字）时，克隆扁平化影子根与同源 iframe 再试一次，深度与容器数量都有上限。此前这类页面的面板只会显示「没有内容」
+18. fix: 引用定位零命中时失效索引只重建一次；高亮样式用完即删（此前永久留在用户页面的 document 里），可见性判断优先用 `element.checkVisibility()`，逐字符归一化新增 ASCII 快路径
+19. fix: 存储层校验错误全部中文化（此前是英文，而 UI 是中文）；不含密钥的导出同时清空 `extraBody`；hook 与 popup 的乐观写入失败会回滚，不再让 UI 停留在从未落盘的值上
+20. fix: GeneralPage 的裁剪策略/面板字号/主题/分组标签/日志级别等硬编码中文全部走 `lib/i18n.ts`；`GithubIcon` 不再丢弃 `size`/`className` 等 props（此前 `<GithubIcon size={18} />` 实际渲染字形自带的 1024 尺寸与 `size-6`）；Token 查看器与模型选择弹窗的英文文案中文化
+21. fix: 主题首次渲染按系统偏好初始化（此前固定 `light`，深色用户会闪白）；`ModelsListPage` 订阅存储变化，别的上下文改模型后列表即时刷新；`file://` 页面不再被当作「不支持」（用户勾选「允许访问文件网址」时可正常注入）
+22. change: 移除悬浮球后遗留的 `enable-floating-ball` / `right-floating-ball-top-page` 两个存储键由迁移清理，`CURRENT_MIGRATION_VERSION` 3 → 4
+23. change(cleanup): 删除死代码——`MessageActions`/`MessageBranch*`/`MessageToolbar`、`seedDefaultPromptIfNeeded`、无入口的 `WelcomePage`/`RoutePlaceholder` 占位页；`LOG_LEVELS` 去重为单一来源并改用 `Object.hasOwn`（此前 `'constructor' in LOG_LEVELS` 会让 `LOG_LEVELS[level]` 变成函数、所有日志被静默关闭）；`timing-bg` 的 `serviceWorkerStartedAt` 按 DEV 门控；bridge 拒绝不可信 port 时直接断开
+24. change(build): `options` 不再跨入口 import popup 的样式表（新增 `assets/page.css`，两者共用）；`.gitignore` 补 `.env*`（WXT 会读取 `.env` 并把 `WXT_*` 内联进产物）；CI 新增三处版本号一致性校验
+25. test: 用例从 184 增至 279（23 个文件）。新增后台 bridge 桥接层（11 例）、`focus-trap`（8 例）、`isTokenKept`（6 例）、`GithubIcon` 渲染（3 例）以及 `summary-input-budget` 不变量、`page-flatten`、`page-extraction` 的 DOM/iframe/影子根用例；引入 jsdom 作为逐文件测试环境（`// @vitest-environment jsdom`，未改动全局 `environment`）；`wxt-browser` 测试替身支持 `runtime.onConnect` 与端口 `sender`
+26. doc: `CODE_REVIEW_v3.1.2.md` 补第 8 节「修复状态」，逐条记录 A/B/C/D 级落点、审查结论更正（B11 的 sonner 一半被实证推翻：sonner 就地渲染、CSS 早已注入影子根；`restoreDefaults` 不覆盖主题；客户端「无超时」只有部分成立）以及「复查后有意不改」的理由
+27. 说明: 本次改动在本机只做了类型检查、Lint、全量单测与构建验证；面板拖拽、主题、shadow DOM/iframe 提取这些表现性改动需要你在真实浏览器里过一眼
+
 ## [3.1.2]
 本版是一次完整的代码审查修复（报告见 `CODE_REVIEW_v3.1.1.md`），含一处已复现的注入缺陷与两处会丢用户数据的问题。
 

@@ -3,9 +3,13 @@ import { browser } from 'wxt/browser';
 import { onMessage } from '@/lib/messaging';
 import { isTrustedSender } from '@/lib/background-trust';
 import {
+  applyPanelSnapshotIndexPatch,
   applyPanelSnapshotPatch,
+  getPanelPageSnapshotStorageKey,
   getPanelSnapshotStorageKey,
-  type PanelSnapshotMap,
+  parsePanelSnapshotIndex,
+  type PanelSnapshot,
+  type PanelSnapshotIndex,
 } from '@/lib/panel-snapshot';
 
 import { createLogger } from '@/lib/logger';
@@ -26,8 +30,14 @@ export function registerPanelSnapshotMessages() {
     return run;
   };
 
-  const readSnapshots = async (tabId: number) =>
-    (await storage.getItem<PanelSnapshotMap>(getPanelSnapshotStorageKey(tabId))) ?? {};
+  // The per-tab index is tiny (one entry per visited page). The summaries
+  // themselves live under one key each, so a save rewrites a single page
+  // instead of the whole tab's history -- the previous single-map layout's
+  // write size grew with every page the tab had visited.
+  const readIndex = async (tabId: number): Promise<PanelSnapshotIndex> =>
+    parsePanelSnapshotIndex(
+      await storage.getItem<unknown>(getPanelSnapshotStorageKey(tabId)),
+    );
 
   onMessage('loadPanelSnapshot', ({ data, sender }) => {
     if (!isTrustedSender(sender)) return null;
@@ -35,7 +45,18 @@ export function registerPanelSnapshotMessages() {
     const tabId = sender.tab?.id;
     if (tabId === undefined) return null;
 
-    return serialize(async () => (await readSnapshots(tabId))[data.pageKey] ?? null);
+    return serialize(async () => {
+      const index = await readIndex(tabId);
+      if (!index.pages.some((page) => page.pageKey === data.pageKey)) {
+        return null;
+      }
+
+      return (
+        (await storage.getItem<PanelSnapshot>(
+          getPanelPageSnapshotStorageKey(tabId, data.pageKey),
+        )) ?? null
+      );
+    });
   });
 
   onMessage('savePanelSnapshot', ({ data, sender }) => {
@@ -45,18 +66,42 @@ export function registerPanelSnapshotMessages() {
     if (tabId === undefined) return;
 
     return serialize(async () => {
-      const next = applyPanelSnapshotPatch(
-        await readSnapshots(tabId),
+      const now = Date.now();
+      const { index, evicted } = applyPanelSnapshotIndexPatch(
+        await readIndex(tabId),
         data.pageKey,
-        data.patch,
-        Date.now(),
+        now,
       );
-      await storage.setItem(getPanelSnapshotStorageKey(tabId), next);
+      const pageStorageKey = getPanelPageSnapshotStorageKey(tabId, data.pageKey);
+      const previous = await storage.getItem<PanelSnapshot>(pageStorageKey);
+
+      // `applyPanelSnapshotPatch` also bounds the payload's size.
+      await storage.setItem(
+        pageStorageKey,
+        applyPanelSnapshotPatch(previous, data.patch, now),
+      );
+      await storage.setItem(getPanelSnapshotStorageKey(tabId), index);
+
+      // Remove evicted pages only after the index stopped referencing them, so
+      // a failed removal can leak a key but can never drop a live snapshot.
+      await Promise.all(
+        evicted.map((pageKey) =>
+          storage.removeItem(getPanelPageSnapshotStorageKey(tabId, pageKey)),
+        ),
+      );
     }).catch((e) => logger.error('[panel-snapshot] Failed to save', e));
   });
 
   browser.tabs.onRemoved.addListener((tabId) => {
-    void serialize(() => storage.removeItem(getPanelSnapshotStorageKey(tabId))).catch((e) =>
+    void serialize(async () => {
+      const index = await readIndex(tabId);
+      await Promise.all([
+        storage.removeItem(getPanelSnapshotStorageKey(tabId)),
+        ...index.pages.map((page) =>
+          storage.removeItem(getPanelPageSnapshotStorageKey(tabId, page.pageKey)),
+        ),
+      ]);
+    }).catch((e) =>
       logger.error('[panel-snapshot] Failed to clear a closed tab', e),
     );
   });

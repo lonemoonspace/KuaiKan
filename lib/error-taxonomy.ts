@@ -3,6 +3,7 @@ export type SummaryErrorCode =
   | 'rate-limit'
   | 'model-not-found'
   | 'timeout'
+  | 'server'
   | 'permission'
   | 'aborted'
   | 'unknown';
@@ -48,6 +49,14 @@ export function classifySummaryError(input: {
   ) {
     return { code: 'timeout', retryable: true };
   }
+  // Everything else in the 5xx range (500/502/503/529 …) means the provider or
+  // the gateway in front of it failed, not the request. These used to fall
+  // through to 'unknown' with `retryable: false`, so a transient 502 was
+  // reported as an unexplained failure that also looked pointless to retry.
+  // 504 is claimed by the timeout branch above on purpose.
+  if (input.status !== undefined && input.status >= 500 && input.status < 600) {
+    return { code: 'server', status: input.status, retryable: true };
+  }
   // Narrow on purpose. A provider body that merely contains the word
   // "permission" (e.g. a 400 saying "no permission to access model X") used to
   // land here and tell the user to check the extension's site access — the
@@ -81,6 +90,7 @@ const COPY: Record<Exclude<SummaryErrorCode, 'unknown'>, string> = {
   // the model id alone.
   'model-not-found': '请求返回 404：请检查模型 ID 与 Base URL 路径是否正确。',
   timeout: '请求超时，请重试。',
+  server: '服务端返回错误（5xx），请稍后重试。',
   permission: '请求被权限或 CORS 拦截，请检查扩展站点访问权限。',
   aborted: '已停止。',
 };

@@ -9,7 +9,6 @@ import { CreatePromptPage } from './pages/prompts/CreatePromptPage';
 import { EditPromptPage } from './pages/prompts/EditPromptPage';
 import { PromptsListPage } from './pages/prompts/PromptsListPage';
 import { PromptsPage } from './pages/prompts/PromptsPage';
-import { WelcomePage } from './pages/WelcomePage';
 
 const optionsRouter = createHashRouter([
   {
@@ -60,9 +59,12 @@ const optionsRouter = createHashRouter([
           },
         ],
       },
+      // Without a catch-all, a hand-typed or stale hash (e.g. an edit link for
+      // a deleted model) dropped the user on React Router's default error
+      // screen with no way back. Send unknown routes to the default page.
       {
-        path: 'welcome',
-        Component: WelcomePage,
+        path: '*',
+        element: <Navigate to="/general" replace />,
       },
     ],
   },

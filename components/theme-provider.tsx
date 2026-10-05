@@ -37,43 +37,43 @@ export function ThemeProvider({
 }: ThemeProviderProps) {
   const [theme, setTheme] = useWxtStorage<Theme>(storageKey as StorageItemKey, defaultTheme);
 
-  const [resolvedTheme, setResolvedTheme] = React.useState<Theme>('light');
+  // Seed from the OS preference (or the manual default) instead of a hardcoded
+  // 'light': the storage read is async, so a dark-mode user got one frame of
+  // light classes before the effect ran.
+  const [resolvedTheme, setResolvedTheme] = React.useState<Theme>(() => {
+    if (defaultTheme !== 'system') return defaultTheme;
+
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
 
   useEffect(() => {
     // If container is explicitly provided as null, we might be waiting for it.
     // If container is undefined, we default to document.documentElement.
     const root = container !== undefined ? container : window.document.documentElement;
     
-    logger.info('[ThemeProvider] effect triggered. theme:', theme, 'container:', container, 'root:', root);
-
     if (!root) {
-      logger.info('[ThemeProvider] No root found. Bailing out.');
+      logger.debug('[ThemeProvider] No theme root yet; skipping.');
       return;
     }
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
     const applyTheme = () => {
-      logger.info('[ThemeProvider] applyTheme called. Current classes before remove:', root.className);
       root.classList.remove('light', 'dark');
 
       let currentTheme = theme;
       if (theme === 'system') {
         currentTheme = mediaQuery.matches ? 'dark' : 'light';
-        logger.info('[ThemeProvider] System theme is', currentTheme);
-      } else {
-        logger.info('[ThemeProvider] Applying manual theme:', currentTheme);
       }
 
       root.classList.add(currentTheme);
       setResolvedTheme(currentTheme);
-      logger.info('[ThemeProvider] Classes after apply:', root.className);
+      logger.debug('[ThemeProvider] Applied theme', currentTheme);
     };
 
     applyTheme();
 
     const handler = () => {
-      logger.info('[ThemeProvider] System media query changed. New match:', mediaQuery.matches);
       if (theme === 'system') {
         applyTheme();
       }

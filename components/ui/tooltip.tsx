@@ -4,6 +4,7 @@ import * as React from "react"
 import * as TooltipPrimitive from "@radix-ui/react-tooltip"
 
 import { cn } from "@/lib/utils"
+import { getPortalContainer } from "@/lib/portal-container"
 
 const TooltipProvider = TooltipPrimitive.Provider
 
@@ -15,7 +16,11 @@ const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
 >(({ className, sideOffset = 4, ...props }, ref) => (
-  <TooltipPrimitive.Portal>
+  // `container`: inside the content script's shadow root the default
+  // `document.body` target lies outside the shadow DOM, so the UI stylesheet
+  // (cssInjectionMode: 'ui') never reached the tooltip. Returning undefined
+  // elsewhere keeps Radix's default for the options/popup pages.
+  <TooltipPrimitive.Portal container={getPortalContainer()}>
     <TooltipPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}

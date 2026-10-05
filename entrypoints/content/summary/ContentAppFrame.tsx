@@ -233,7 +233,7 @@ export function ContentAppFrame({
       />
       {/* 顶部栏 / Top Bar */}
       <header
-        className="px-1 py-1 border-b grid grid-cols-[1fr_auto_1fr] items-center cursor-move whitespace-nowrap gap-2 select-none"
+        className="px-1 py-1 border-b grid grid-cols-[1fr_auto_1fr] items-center cursor-move whitespace-nowrap gap-2 select-none touch-none"
         data-drag-handle
       >
         <div className="flex items-stretch gap-1.5 justify-start shrink-0 h-full">
@@ -368,22 +368,24 @@ export function ContentAppFrame({
 
       {/* Status bar: in normal flow below the summary, so it never covers text. */}
       <footer className="kuai-status-bar flex items-center justify-between gap-2 px-3 py-1 shrink-0">
-        <div className="flex items-center gap-1 min-w-0" title={uiMessages.content.viewChangeHint}>
-          <span className="truncate tabular-nums">
-            {pageContentTokenCount !== null
-              ? (effectiveTokenLimit > 0 && pageContentTokenCount > effectiveTokenLimit)
-                ? `${uiMessages.content.inputTokensLabel}${formatTokens(effectiveTokenLimit)} · ${uiMessages.content.totalLabel}${formatTokens(pageContentTokenCount)}`
-                : `${uiMessages.content.inputTokensLabel}${formatTokens(pageContentTokenCount)}`
-              : `${uiMessages.content.inputTokensLabel}${uiMessages.content.calculating}`}
-          </span>
-          <button
-            className="inline-flex items-center justify-center shrink-0 size-5 rounded hover:bg-muted hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            title={uiMessages.content.tokenPreview}
-            onClick={() => setIsTokenViewerOpen(true)}
-          >
-            <ScanEye size={13} strokeWidth={2} />
-          </button>
-        </div>
+        {enableTokenUsageView && (
+          <div className="flex items-center gap-1 min-w-0" title={uiMessages.content.viewChangeHint}>
+            <span className="truncate tabular-nums">
+              {pageContentTokenCount !== null
+                ? (effectiveTokenLimit > 0 && pageContentTokenCount > effectiveTokenLimit)
+                  ? `${uiMessages.content.inputTokensLabel}${formatTokens(effectiveTokenLimit)} · ${uiMessages.content.totalLabel}${formatTokens(pageContentTokenCount)}`
+                  : `${uiMessages.content.inputTokensLabel}${formatTokens(pageContentTokenCount)}`
+                : `${uiMessages.content.inputTokensLabel}${uiMessages.content.calculating}`}
+            </span>
+            <button
+              className="inline-flex items-center justify-center shrink-0 size-5 rounded hover:bg-muted hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={uiMessages.content.tokenPreview}
+              onClick={() => setIsTokenViewerOpen(true)}
+            >
+              <ScanEye size={13} strokeWidth={2} />
+            </button>
+          </div>
+        )}
         {enableTokenUsageView && messages.length > 0 && !isBusy && (
           <UsageDisplay messages={messages} currentModel={currentModel} />
         )}

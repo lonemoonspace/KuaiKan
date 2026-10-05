@@ -25,16 +25,6 @@ async function loadCache() {
 function makeContent(textContent: string): WebpageContent {
   return {
     articleUrl: HREF,
-    byline: '',
-    content: '',
-    dir: 'ltr',
-    excerpt: '',
-    extractMethod: 'readability',
-    inputTextLength: textContent.length,
-    lang: 'zh',
-    length: textContent.length,
-    publishedTime: '',
-    siteName: 'example.test',
     textContent,
     title: '示例文章',
   };

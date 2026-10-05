@@ -139,7 +139,8 @@ export const MIGRATION_VERSION_STORAGE_KEY = 'local:migration-version';
 // v3: the marker itself moved from the raw key `local:migration-version` to the
 // correct raw key `migration-version`, and the migration no longer relocates
 // live keys. Bumping forces one repair pass on installs damaged by v2.
-export const CURRENT_MIGRATION_VERSION = 3;
+// v4: drops the two storage keys orphaned by the removed floating-ball feature.
+export const CURRENT_MIGRATION_VERSION = 4;
 
 // WXT storage keys are written as `area:key`, and @wxt-dev/storage strips the
 // area prefix before touching browser.storage. So `storage.getItem(
@@ -165,6 +166,13 @@ const MIGRATION_VERSION_RAW_KEY = rawKey(MIGRATION_VERSION_STORAGE_KEY);
 const OBSOLETE_RAW_KEYS = [
   'content-samples-position',
   'local:content-samples-position',
+  // Left behind by the removed floating-ball feature (v3.1.2+). Nothing reads
+  // them any more, so drop them on the next migration instead of carrying two
+  // dead keys forever.
+  'enable-floating-ball',
+  'local:enable-floating-ball',
+  'right-floating-ball-top-page',
+  'local:right-floating-ball-top-page',
 ];
 
 export type MigrationResult = { ok: boolean; logs: string[] };

@@ -119,8 +119,67 @@ describe('AiSdkConnectTransport.sendMessages', () => {
 
     port.emitDisconnect();
 
-    await expect(reader.read()).rejects.toThrow(
-      'AI SDK connect bridge disconnected before completion.',
-    );
+    // The message surfaces verbatim in the panel (nothing in error-taxonomy
+    // classifies it), so it is asserted in the UI language.
+    await expect(reader.read()).rejects.toThrow('与后台服务的连接已断开，请重试。');
+    expect(port.listenerCount).toBe(0);
+  });
+
+  it('aborts immediately when the caller hands over an already-aborted signal', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const reader = (await startStream(controller.signal)).getReader();
+
+    // Nothing may be sent to the background, and the request must not hang.
+    expect(port.posted).toEqual([{ type: 'abort' }]);
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
+    expect(port.disconnected).toBe(true);
+    expect(port.listenerCount).toBe(0);
+  });
+
+  it('fails the stream and releases the port when the request frame cannot be posted', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const throwingPort = new MockPort();
+    throwingPort.postMessage = () => {
+      throw new Error('Extension context invalidated.');
+    };
+    __setMockPortFactory(() => throwingPort);
+
+    try {
+      const reader = (await startStream()).getReader();
+
+      // `port.postMessage` throwing must not escape `start`: the stream errors
+      // through the normal path, so the listeners are removed too.
+      await expect(reader.read()).rejects.toThrow('无法连接后台服务，请重试。');
+      expect(throwingPort.listenerCount).toBe(0);
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  // A `Port` whose `disconnect()` does not re-dispatch `onDisconnect` on the
+  // *same* port object — Chrome does not document that it does, and the
+  // transport used to rely on it: `cancel()` called `port.disconnect()` only,
+  // so `onMessage`/`onDisconnect`/the abort listener stayed registered.
+  class SilentDisconnectPort extends MockPort {
+    disconnect() {
+      this.disconnected = true;
+    }
+  }
+
+  it('releases the port listeners on cancel without relying on onDisconnect', async () => {
+    const silentPort = new SilentDisconnectPort();
+    __setMockPortFactory(() => silentPort);
+    const reader = (await startStream()).getReader();
+
+    expect(silentPort.listenerCount).toBeGreaterThan(0);
+
+    await reader.cancel();
+
+    expect(silentPort.disconnected).toBe(true);
+    expect(silentPort.listenerCount).toBe(0);
+    expect(silentPort.posted.at(-1)).toEqual({ type: 'abort' });
   });
 });

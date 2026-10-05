@@ -29,14 +29,14 @@ export function useResizable<T extends HTMLElement>({
   const resizeDir = useRef<ResizeDirection>('bottomRight');
   const limits = useRef({ minW: 0, maxW: Infinity, minH: 0, maxH: Infinity });
 
-  const startResize = (event: React.MouseEvent, direction: ResizeDirection) => {
-    if (!enabled || !targetRef.current) return;
+  const startResize = (event: React.PointerEvent, direction: ResizeDirection) => {
+    if (!enabled || !targetRef.current || event.button !== 0) return;
     event.stopPropagation();
     event.preventDefault();
 
     isResizingRef.current = true;
     startMouse.current = { x: event.clientX, y: event.clientY };
-    
+
     const el = targetRef.current;
 
     startDim.current = {
@@ -62,17 +62,23 @@ export function useResizable<T extends HTMLElement>({
     detach();
     const onMove = resize;
     const onUp = stopResize;
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    // Pointer Events (not mouse events) so touch/pen resizing works at all, and
+    // `pointercancel` -- which the browser fires when it takes the gesture over
+    // for scrolling or a system gesture -- ends the resize instead of leaving
+    // the panel stuck mid-drag with listeners still attached.
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
     detachRef.current = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
     };
   };
 
   const rafRef = useRef<number | null>(null);
 
-  const resize = (event: MouseEvent) => {
+  const resize = (event: PointerEvent) => {
     if (!isResizingRef.current || !targetRef.current) return;
     
     // Calculate new dimensions immediately to avoid stale event data
@@ -115,13 +121,22 @@ export function useResizable<T extends HTMLElement>({
         newH = startDim.current.height - diffY;
         newH = Math.max(minH, Math.min(newH, maxH));
         el.style.height = `${newH}px`;
+        // Keep the bottom edge pinned: growing upward must move the top edge up
+        // by the same amount. This branch used to change only the height, so a
+        // top handle silently detached from the pointer (no such handle is
+        // rendered today -- the panel offers bottom/left/bottomLeft only).
+        el.style.top = `${startDim.current.top + (startDim.current.height - newH)}px`;
       }
 
       // Dynamic Content Constraint: physically stop shrinking if children are overflowing
       if (widthChanged) {
         const content = el.lastElementChild as HTMLElement;
         if (content && content.scrollWidth > Math.ceil(content.clientWidth)) {
-          el.style.width = `${content.scrollWidth + (el.offsetWidth - el.clientWidth)}px`;
+          const contentWidth = content.scrollWidth + (el.offsetWidth - el.clientWidth);
+          // Clamp against the same limits the drag obeyed: the content-driven
+          // width can exceed the viewport cap, which used to leave the panel
+          // wider than the window.
+          el.style.width = `${Math.max(minW, Math.min(contentWidth, maxW))}px`;
         }
       }
     });
@@ -172,7 +187,7 @@ export function useDraggable<T extends HTMLElement>({
   const startPos = useRef({ left: 0, top: 0 });
   const THRESHOLD = 10;
 
-  const startDrag = (event: React.MouseEvent<HTMLElement>) => {
+  const startDrag = (event: React.PointerEvent<HTMLElement>) => {
     if (!enabled || !targetRef.current || event.button !== 0) return;
 
     const target = event.target as HTMLElement;
@@ -187,20 +202,38 @@ export function useDraggable<T extends HTMLElement>({
     startPos.current = { left: rect.left, top: rect.top };
     isDraggingRef.current = true;
 
+    // Pointer capture keeps the drag alive when the pointer leaves the window
+    // (a mouse released over the browser chrome used to leave `isDragging` set
+    // and the panel following the cursor) and is what makes touch/pen dragging
+    // possible. Best-effort: capture throws if the pointer id is already gone.
+    const captureTarget = event.currentTarget;
+    const pointerId = event.pointerId;
+    try {
+      captureTarget.setPointerCapture(pointerId);
+    } catch {
+      // Capture is an optimisation; the document-level listeners below still
+      // drive the drag without it.
+    }
+
     if (onDragStart) onDragStart();
 
     detach();
     const onMove = drag;
     const onUp = endDrag;
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
     detachRef.current = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+      if (captureTarget.hasPointerCapture?.(pointerId)) {
+        captureTarget.releasePointerCapture(pointerId);
+      }
     };
   };
 
-  const drag = (event: MouseEvent) => {
+  const drag = (event: PointerEvent) => {
     if (!isDraggingRef.current || !targetRef.current) return;
     const el = targetRef.current;
     

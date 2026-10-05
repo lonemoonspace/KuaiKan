@@ -31,7 +31,7 @@ export function CreateModelPage() {
             // Created by the background worker: it owns the read-modify-write
             // for this key, so a concurrent edit elsewhere cannot be lost.
             await sendExtMessage('mutateModelSettings', { op: 'create', draft });
-            toast.success('Model created.');
+            toast.success('模型已创建。');
             navigate('/models');
           } finally {
             setIsSaving(false);
