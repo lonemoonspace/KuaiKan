@@ -1,26 +1,22 @@
 import { Readability } from '@mozilla/readability';
 import type { PageTextExtractMethod } from '@/constants/page-extraction';
+import { flattenShadowAndIframeContent, needsFlattenedRetry } from '@/lib/page-flatten';
 
 export {
   PAGE_TEXT_EXTRACT_METHODS,
   isPageTextExtractMethod,
 } from '@/constants/page-extraction';
 export type { PageTextExtractMethod } from '@/constants/page-extraction';
-export type WebpageExtractMethod = PageTextExtractMethod;
 
+/**
+ * What the panel actually needs from an extraction. Readability's other outputs
+ * (`content` — the article as HTML, `excerpt`, `byline`, `siteName`, `length`,
+ * `readabilityTextLength`, …) had no reader: `content` in particular duplicated
+ * the article inside every cache entry, doubling what a long SPA session holds.
+ * Anything the panel shows has to be listed here.
+ */
 export type WebpageContent = {
   articleUrl: string;
-  byline: string;
-  content: string;
-  dir: string;
-  excerpt: string;
-  extractMethod: WebpageExtractMethod;
-  inputTextLength: number;
-  lang: string;
-  length: number;
-  publishedTime: string;
-  readabilityTextLength?: number;
-  siteName: string;
   textContent: string;
   title: string;
 };
@@ -66,6 +62,29 @@ const NOISE_SELECTOR = [
 ].join(', ');
 const CANDIDATE_TAGS = new Set(['ARTICLE', 'MAIN', 'SECTION', 'DIV']);
 
+// Block boundaries used to rebuild paragraph breaks when the winner's text is
+// read without `innerText` (see `getWinnerText`).
+const BLOCK_SEPARATOR_SELECTOR = [
+  'p',
+  'div',
+  'section',
+  'article',
+  'li',
+  'br',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'pre',
+  'blockquote',
+  'tr',
+  'dd',
+  'dt',
+  'figcaption',
+].join(', ');
+
 type CandidateMetrics = {
   bodyShare: number;
   calloutCount: number;
@@ -93,63 +112,22 @@ export function cleanExtractedText(input: string) {
     .trim();
 }
 
-function getMetaContent(sourceDocument: Document, property: string) {
-  return (
-    sourceDocument.querySelector<HTMLMetaElement>(
-      `meta[property="${property}"]`,
-    )?.content ?? ''
-  );
-}
-
 function getBaseMetadata(sourceDocument: Document) {
   return {
     articleUrl: sourceDocument.location?.href ?? location.href,
-    byline: '',
-    dir: sourceDocument.dir || '',
-    lang: sourceDocument.documentElement.lang || '',
-    publishedTime: getMetaContent(sourceDocument, 'article:published_time'),
-    siteName:
-      getMetaContent(sourceDocument, 'og:site_name') ||
-      sourceDocument.location?.hostname ||
-      location.hostname,
     title: sourceDocument.title || '',
   };
-}
-
-function escapeHtml(input: string) {
-  return input
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
-}
-
-function textContentToHtml(textContent: string) {
-  return textContent
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => `<p>${escapeHtml(line)}</p>`)
-    .join('\n');
 }
 
 function toWebpageContent(
   sourceDocument: Document,
   textContent: string,
-  extractMethod: WebpageExtractMethod,
   overrides: Partial<WebpageContent> = {},
 ): WebpageContent {
   const normalizedText = cleanExtractedText(textContent);
-  const readabilityTextLength =
-    overrides.readabilityTextLength ?? normalizedText.length;
 
   return {
     ...getBaseMetadata(sourceDocument),
-    content: textContentToHtml(normalizedText),
-    excerpt: normalizedText.slice(0, 280),
-    extractMethod,
-    inputTextLength: normalizedText.length,
-    length: normalizedText.length,
-    readabilityTextLength,
     textContent: normalizedText,
     ...overrides,
   };
@@ -184,12 +162,79 @@ function isNoiseElement(element: HTMLElement) {
   return NOISE_HINT_RE.test(hintText) && !CONTENT_HINT_RE.test(hintText);
 }
 
+type VisibilityCheckable = Element & {
+  checkVisibility?: (options?: {
+    checkOpacity?: boolean;
+    checkVisibilityCSS?: boolean;
+  }) => boolean;
+};
+
+function isInvisibleElement(element: Element): boolean {
+  const checkable = element as VisibilityCheckable;
+
+  if (typeof checkable.checkVisibility === 'function') {
+    try {
+      return !checkable.checkVisibility({ checkOpacity: false, checkVisibilityCSS: true });
+    } catch {
+      // Older engines: fall back to the inline checks below.
+    }
+  }
+
+  const htmlElement = element as HTMLElement;
+  return Boolean(
+    htmlElement.hidden ||
+      htmlElement.style.display === 'none' ||
+      htmlElement.style.visibility === 'hidden',
+  );
+}
+
+/**
+ * The winning candidate's text, with the elements that were only ever used to
+ * *disqualify* a candidate removed for real.
+ *
+ * `NOISE_SELECTOR` pruning in `collectCandidateElements` decides which elements
+ * may win; it never stripped header/footer/nav/button/form text out of the
+ * winning subtree, so a page's navigation and cookie-banner copy was appended
+ * to `{{textContent}}`. Cloning the winner (and skipping its invisible
+ * children) keeps the paragraph breaks `textContentToHtml` relies on without
+ * mutating the live page — which would invalidate every MutationObserver on it,
+ * including this extension's own text index.
+ */
+function getWinnerText(element: HTMLElement): string {
+  const clone = element.cloneNode(true) as HTMLElement;
+
+  // Live and clone trees have the same document order until something is
+  // removed, so pairing the two NodeLists by index identifies each counterpart.
+  const liveNodes = Array.from(element.querySelectorAll('*'));
+  const cloneNodes = Array.from(clone.querySelectorAll('*'));
+  const removable: Element[] = [];
+
+  liveNodes.forEach((liveNode, nodeIndex) => {
+    const cloneNode = cloneNodes[nodeIndex];
+    if (!cloneNode) return;
+    if (cloneNode.matches(NOISE_SELECTOR) || isInvisibleElement(liveNode)) {
+      removable.push(cloneNode);
+    }
+  });
+
+  removable.forEach((node) => node.remove());
+  clone.querySelectorAll(BLOCK_SEPARATOR_SELECTOR).forEach((node) => node.after('\n'));
+
+  return cleanExtractedText(clone.textContent ?? '');
+}
+
 function isCandidateElement(element: HTMLElement) {
   if (isNoiseElement(element) || element.childElementCount === 0) {
     return false;
   }
 
-  const textLength = getElementText(element).length;
+  // Candidacy is tested for every visited DIV/SECTION/ARTICLE/MAIN, and the
+  // walker re-tests each ancestor level, so this runs O(depth) times over the
+  // whole page. `getElementText` cleans the subtree text with five global regex
+  // passes (and used to force a reflow through `innerText`), while a raw length
+  // already answers "is there enough text here to be worth scoring" — the
+  // cleaned length is still what the scorer and the winner use.
+  const textLength = (element.textContent ?? '').length;
   if (textLength < 280) {
     return false;
   }
@@ -355,16 +400,7 @@ export function readabilityParseRead(sourceDocument: Document = document) {
     return undefined;
   }
 
-  return toWebpageContent(sourceDocument, articleTextContent, 'readability', {
-    byline: article.byline || '',
-    content: article.content || '',
-    dir: article.dir || '',
-    excerpt: article.excerpt || '',
-    inputTextLength: articleTextContent.length,
-    lang: article.lang || '',
-    publishedTime: article.publishedTime || '',
-    readabilityTextLength: articleTextContent.length,
-    siteName: article.siteName || getBaseMetadata(sourceDocument).siteName,
+  return toWebpageContent(sourceDocument, articleTextContent, {
     title: article.title || getBaseMetadata(sourceDocument).title,
   });
 }
@@ -385,15 +421,18 @@ export function domHeuristicParseRead(sourceDocument: Document = document) {
         score: scoreCandidate(element, bodyText.length),
       }))
       .sort((left, right) => right.score - left.score)[0];
-    const bestText = bestCandidate ? getElementText(bestCandidate.element) : '';
-    const text = bestText || bodyText;
+    const bestText = bestCandidate ? getWinnerText(bestCandidate.element) : '';
+    // The body fallback gets the same noise stripping, otherwise a page that
+    // defeats both heuristics sends its navigation and footer instead of an
+    // article.
+    const text = bestText || getWinnerText(body);
 
     // No text at all is "no content", not an empty article. Returning an empty
     // `WebpageContent` here made the callers treat the page as extracted (and
     // cache it), so the summary went out with an empty `{{textContent}}`.
     if (!text) return undefined;
 
-    return toWebpageContent(sourceDocument, text, 'dom-heuristic');
+    return toWebpageContent(sourceDocument, text);
   } finally {
     textCache = null;
   }
@@ -417,6 +456,24 @@ export function pickExtraction(
   return undefined;
 }
 
+/**
+ * Run the chosen strategy first and the other one only if needed.
+ *
+ * `pickExtraction(primary(doc), fallback(doc))` evaluated BOTH extractors on
+ * every call, so each panel mount, SPA refresh and popup "copy page" paid for a
+ * full Readability clone+parse *and* the whole DOM-heuristic walk even when the
+ * first result was usable. Passing thunks keeps the same "complement each
+ * other" behaviour without the second pass.
+ */
+export function pickExtractionLazily(
+  primary: () => WebpageContent | undefined,
+  fallback: () => WebpageContent | undefined,
+): WebpageContent | undefined {
+  const first = primary();
+  if (first?.textContent) return first;
+  return pickExtraction(first, fallback());
+}
+
 export function parsePageContent(
   extractMethod: PageTextExtractMethod = 'readability',
   sourceDocument: Document = document,
@@ -427,5 +484,28 @@ export function parsePageContent(
   const primary = extractMethod === 'dom-heuristic' ? domHeuristicParseRead : readabilityParseRead;
   const fallback = extractMethod === 'dom-heuristic' ? readabilityParseRead : domHeuristicParseRead;
 
-  return pickExtraction(primary(sourceDocument), fallback(sourceDocument));
+  const extracted = pickExtractionLazily(
+    () => primary(sourceDocument),
+    () => fallback(sourceDocument),
+  );
+
+  // Neither strategy can see an article rendered inside an open shadow root or a
+  // same-origin frame (see lib/page-flatten.ts). Inlining costs a document clone,
+  // so it is only paid for when the normal pass came back empty-ish — which is
+  // exactly the case that used to surface "没有内容".
+  if (!needsFlattenedRetry(extracted?.textContent)) {
+    return extracted;
+  }
+
+  const flattened = flattenShadowAndIframeContent(sourceDocument);
+  if (!flattened) {
+    return extracted;
+  }
+
+  const retried = pickExtractionLazily(
+    () => primary(flattened),
+    () => fallback(flattened),
+  );
+
+  return retried?.textContent?.trim() ? retried : extracted;
 }

@@ -24,7 +24,7 @@ export function EditModelPage() {
 
     async function load() {
       if (!modelId) {
-        setLoadError('Model ID is missing.');
+        setLoadError('缺少模型 ID。');
         return;
       }
 
@@ -36,7 +36,7 @@ export function EditModelPage() {
         if (!active) return;
 
         if (!nextModel) {
-          setLoadError('Model was not found.');
+          setLoadError('未找到该模型。');
           return;
         }
 
@@ -45,7 +45,7 @@ export function EditModelPage() {
         if (!active) return;
 
         setLoadError(
-          error instanceof Error ? error.message : 'Model settings failed to load.',
+          error instanceof Error ? error.message : '模型设置加载失败。',
         );
       }
     }
@@ -83,7 +83,7 @@ export function EditModelPage() {
                 id: model.id,
                 draft,
               });
-              toast.success('Model saved.');
+              toast.success('模型已保存。');
               navigate('/models');
             } finally {
               setIsSaving(false);

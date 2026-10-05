@@ -109,6 +109,25 @@ describe('classifySummaryError', () => {
       retryable: false,
     });
   });
+
+  // 5xx used to fall through to 'unknown'/retryable:false, so a transient 502
+  // from a gateway was indistinguishable from an unexplained failure.
+  it('classifies non-timeout 5xx responses as a retryable server error', () => {
+    for (const status of [500, 502, 503, 529]) {
+      expect(classifySummaryError({ message: 'bad gateway', status })).toEqual({
+        code: 'server',
+        status,
+        retryable: true,
+      });
+    }
+  });
+
+  it('still reports 504 as a timeout, not a server error', () => {
+    expect(classifySummaryError({ message: 'gateway timeout', status: 504 })).toEqual({
+      code: 'timeout',
+      retryable: true,
+    });
+  });
 });
 
 describe('describeSummaryError', () => {

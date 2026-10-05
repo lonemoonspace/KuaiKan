@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { useResizable, useDraggable } from './internal/interactions';
 import useWxtStorage from '@/hooks/useWxtStorage';
 import { type StorageItemKey } from '#imports';
@@ -37,7 +37,7 @@ function UnifiedPanelRenderer({ children, storageKey }: { children: React.ReactN
 
   const [floatingState, setFloatingState, isFloatingLoaded] = useWxtStorage<FloatingState | null>(floatingStateKey, null);
 
-  const saveFloatingState = () => {
+  const saveFloatingState = useCallback(() => {
     if (containerRef.current) {
       const el = containerRef.current;
       setFloatingState({
@@ -49,7 +49,7 @@ function UnifiedPanelRenderer({ children, storageKey }: { children: React.ReactN
         bottom: el.style.bottom,
       });
     }
-  };
+  }, [setFloatingState]);
 
   const { startDrag } = useDraggable({
     targetRef: containerRef,
@@ -108,15 +108,28 @@ function UnifiedPanelRenderer({ children, storageKey }: { children: React.ReactN
       const maxWidth = document.documentElement.clientWidth;
       const maxHeight = document.documentElement.clientHeight;
 
-      if (el.offsetWidth > maxWidth) el.style.width = `${maxWidth}px`;
-      if (el.offsetHeight > maxHeight) el.style.height = `${maxHeight}px`;
+      let corrected = false;
+      if (el.offsetWidth > maxWidth) {
+        el.style.width = `${maxWidth}px`;
+        corrected = true;
+      }
+      if (el.offsetHeight > maxHeight) {
+        el.style.height = `${maxHeight}px`;
+        corrected = true;
+      }
 
-      if (isHeaderReachable(el)) return;
+      if (!isHeaderReachable(el)) {
+        el.style.left = '';
+        el.style.top = '4em';
+        el.style.right = '4em';
+        el.style.bottom = '';
+        corrected = true;
+      }
 
-      el.style.left = '';
-      el.style.top = '4em';
-      el.style.right = '4em';
-      el.style.bottom = '';
+      // Persist the correction. The snapshot is reused across window sizes, so
+      // without writing it back the panel snapped straight back to the
+      // unreachable geometry on the next load and had to be rescued again.
+      if (corrected) saveFloatingState();
     };
 
     const handleResize = () => {
@@ -131,19 +144,19 @@ function UnifiedPanelRenderer({ children, storageKey }: { children: React.ReactN
       window.removeEventListener('resize', handleResize);
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [isFloatingLoaded, floatingState]);
+  }, [isFloatingLoaded, floatingState, saveFloatingState]);
 
   if (!isFloatingLoaded) return null;
 
   return (
     <div
       ref={containerRef}
-      onMouseDown={startDrag}
+      onPointerDown={startDrag}
       className="flex flex-col z-[2147483647] fixed bg-background rounded-xl shadow-[0_12px_48px_rgba(0,0,0,0.14)] border border-border max-w-[100vw] max-h-[100vh] min-w-[384px] min-h-[224px]"
     >
-      <div className="absolute bottom-0 left-0 w-full h-1.5 cursor-ns-resize z-50" onMouseDown={(e) => startResize(e, 'bottom')} />
-      <div className="absolute top-0 left-0 w-1.5 h-full cursor-ew-resize z-50" onMouseDown={(e) => startResize(e, 'left')} />
-      <div className="absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize z-50" onMouseDown={(e) => startResize(e, 'bottomLeft')} />
+      <div className="absolute bottom-0 left-0 w-full h-1.5 cursor-ns-resize z-50 touch-none" onPointerDown={(e) => startResize(e, 'bottom')} />
+      <div className="absolute top-0 left-0 w-1.5 h-full cursor-ew-resize z-50 touch-none" onPointerDown={(e) => startResize(e, 'left')} />
+      <div className="absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize z-50 touch-none" onPointerDown={(e) => startResize(e, 'bottomLeft')} />
 
       {children}
     </div>

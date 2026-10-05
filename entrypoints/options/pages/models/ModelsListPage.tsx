@@ -14,6 +14,7 @@ import { getUiMessages } from '@/lib/i18n';
 import {
   buildModelExportFile,
   downloadJsonFile,
+  MAX_MODEL_IMPORT_FILE_BYTES,
   mergeImportedModels,
   parseModelExportFile,
 } from '@/lib/model-transfer';
@@ -24,14 +25,26 @@ import {
 import type { ModelMutationRequest } from '@/lib/settings-mutations';
 import { sendMessage as sendExtMessage } from '@/lib/messaging';
 import { cn } from '@/lib/utils';
+import { createLogger } from '@/lib/logger';
+import {
+  DEFAULT_MODEL_ID_V2_STORAGE_KEY,
+  MODEL_CONFIGS_V2_STORAGE_KEY,
+} from '@/constants/model-settings';
+import { storage } from '#imports';
 import { OptionsPageTitle } from '../OptionsPageTitle';
+
+const logger = createLogger('options:ModelsListPage');
 
 export function ModelsListPage() {
   const messages = getUiMessages();
   const [settings, setSettings] = useState<ModelSettings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busyModelId, setBusyModelId] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // The scroll after a duplicate is deferred so the new row is in the DOM first;
+  // track it so a fast navigation away cannot scroll a page that is gone.
+  const scrollTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -47,7 +60,7 @@ export function ModelsListPage() {
         if (!active) return;
 
         setLoadError(
-          error instanceof Error ? error.message : 'Model settings failed to load.',
+          error instanceof Error ? error.message : messages.models.loadFailed,
         );
       }
     }
@@ -56,6 +69,30 @@ export function ModelsListPage() {
 
     return () => {
       active = false;
+      if (scrollTimeoutRef.current !== null) {
+        window.clearTimeout(scrollTimeoutRef.current);
+        scrollTimeoutRef.current = null;
+      }
+    };
+  }, [messages.models.loadFailed]);
+
+  // The background owns these keys and other contexts write them too (the
+  // popup switches the default model, another options tab edits or imports).
+  // Without a watcher this list kept showing the snapshot it mounted with.
+  useEffect(() => {
+    const refresh = () => {
+      void loadModelSettings()
+        .then(setSettings)
+        .catch((e) => logger.error('[ModelsListPage] Failed to refresh models', e));
+    };
+
+    const unwatchers = [
+      storage.watch(MODEL_CONFIGS_V2_STORAGE_KEY, refresh),
+      storage.watch(DEFAULT_MODEL_ID_V2_STORAGE_KEY, refresh),
+    ];
+
+    return () => {
+      for (const unwatch of unwatchers) unwatch();
     };
   }, []);
 
@@ -116,6 +153,18 @@ export function ModelsListPage() {
 
     if (!file) return;
 
+    // The picker can be opened twice (and a 100 MB file is a real thing to
+    // accidentally select): refuse before reading it into memory, and never run
+    // two imports at once.
+    if (isImporting) return;
+
+    if (file.size > MAX_MODEL_IMPORT_FILE_BYTES) {
+      toast.error(messages.models.importFileTooLarge);
+      return;
+    }
+
+    setIsImporting(true);
+
     try {
       const parsed = parseModelExportFile(JSON.parse(await file.text()));
 
@@ -158,6 +207,8 @@ export function ModelsListPage() {
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : messages.models.importFailed);
+    } finally {
+      setIsImporting(false);
     }
   }
 
@@ -214,7 +265,8 @@ export function ModelsListPage() {
 
         if (created) {
           toast.success(messages.models.duplicatedToast);
-          setTimeout(() => {
+          scrollTimeoutRef.current = window.setTimeout(() => {
+            scrollTimeoutRef.current = null;
             window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
           }, 100);
           return true;
@@ -394,14 +446,16 @@ export function ModelsListPage() {
                           <dd className="mt-0.5">{model.apiMode}</dd>
                         </div>
                       ) : null}
-                      {model.maxInputTokens ? (
-                        <div className="min-w-0">
-                          <dt className="text-[11px] font-medium uppercase text-muted-foreground">
-                            {messages.models.maxInputTokens}
-                          </dt>
-                          <dd className="mt-0.5">{model.maxInputTokens}</dd>
-                        </div>
-                      ) : null}
+                      <div className="min-w-0">
+                        <dt className="text-[11px] font-medium uppercase text-muted-foreground">
+                          {messages.models.maxInputTokens}
+                        </dt>
+                        <dd className="mt-0.5">
+                          {model.maxInputTokens > 0
+                            ? model.maxInputTokens
+                            : messages.models.noInputTokenLimit}
+                        </dd>
+                      </div>
                       {model.inputTokenPrice || model.outputTokenPrice ? (
                         <div className="min-w-0">
                           <dt className="text-[11px] font-medium uppercase text-muted-foreground">
@@ -468,12 +522,18 @@ export function ModelsListPage() {
                   <Button
                     aria-label={messages.models.edit(model.name)}
                     asChild
-                    disabled={isBusy}
                     size="icon"
                     title={messages.models.edit(model.name)}
                     variant="outline"
                   >
-                    <Link to={`/models/edit?id=${model.id}`}>
+                    {/* `<a>` ignores `disabled`, so the busy guard has to be
+                        expressed on the link itself. */}
+                    <Link
+                      aria-disabled={isBusy || undefined}
+                      className={isBusy ? 'pointer-events-none opacity-50' : undefined}
+                      tabIndex={isBusy ? -1 : undefined}
+                      to={`/models/edit?id=${model.id}`}
+                    >
                       <Edit3 className="size-4" />
                     </Link>
                   </Button>

@@ -10,6 +10,15 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('content:ai-sdk-transport');
 
+/**
+ * Both messages below reach the user verbatim: `classifySummaryError` has no
+ * code for "the bridge itself is gone", so it falls through to `unknown` and
+ * the panel toasts the raw text. That is why they are worded for the user, in
+ * the UI language, instead of being an English developer note.
+ */
+const BRIDGE_DISCONNECTED_MESSAGE = '与后台服务的连接已断开，请重试。';
+const BRIDGE_UNREACHABLE_MESSAGE = '无法连接后台服务，请重试。';
+
 type AiSdkConnectTransportOptions = {
   getModelConfigId?: () => string | null;
   getSystemMessage?: () => string | null;
@@ -51,22 +60,28 @@ export class AiSdkConnectTransport implements ChatTransport<UIMessage> {
       name: AI_SDK_CONNECT_BRIDGE_PORT,
     });
 
+    // The listeners are registered inside `start`, but `cancel` is a sibling
+    // property of the underlying source object — it cannot see anything
+    // declared in `start`'s scope. Keeping the teardown state out here is what
+    // lets both exits remove the listeners; `cancel` used to call
+    // `port.disconnect()` alone and rely on Chrome re-dispatching
+    // `onDisconnect` to the *same* port object, which is not guaranteed.
+    let closed = false;
+    let removeListeners: () => void = () => {};
+
+    const closePort = () => {
+      removeListeners();
+
+      try {
+        port.disconnect();
+      } catch {
+        // The background side may have already closed the port.
+      }
+    };
+
     return new ReadableStream<UIMessageChunk>({
       start: (controller) => {
-        let closed = false;
         let aborted = false;
-
-        const closePort = () => {
-          port.onMessage.removeListener(onMessage);
-          port.onDisconnect.removeListener(onDisconnect);
-          abortSignal?.removeEventListener('abort', onAbort);
-
-          try {
-            port.disconnect();
-          } catch {
-            // The background side may have already closed the port.
-          }
-        };
 
         const closeStream = () => {
           if (closed) return;
@@ -100,7 +115,12 @@ export class AiSdkConnectTransport implements ChatTransport<UIMessage> {
         };
 
         const onMessage = (message: unknown) => {
+          // A frame that is not an object (or has no string discriminator) is
+          // not ours; reading `.type` off null/undefined would throw inside the
+          // port listener and leave the stream hanging with no error event.
+          if (typeof message !== 'object' || message === null) return;
           const frame = message as AiSdkConnectBridgeServerMessage;
+          if (typeof frame.type !== 'string') return;
 
           if (frame.type === 'chunk') {
             markTiming('前台收到首个数据帧');
@@ -140,7 +160,7 @@ export class AiSdkConnectTransport implements ChatTransport<UIMessage> {
           if (aborted || closed) return;
 
           errorStream({
-            message: 'AI SDK connect bridge disconnected before completion.',
+            message: BRIDGE_DISCONNECTED_MESSAGE,
           });
         };
 
@@ -157,6 +177,12 @@ export class AiSdkConnectTransport implements ChatTransport<UIMessage> {
           closeStream();
         };
 
+        removeListeners = () => {
+          port.onMessage.removeListener(onMessage);
+          port.onDisconnect.removeListener(onDisconnect);
+          abortSignal?.removeEventListener('abort', onAbort);
+        };
+
         port.onMessage.addListener(onMessage);
         port.onDisconnect.addListener(onDisconnect);
         abortSignal?.addEventListener('abort', onAbort, { once: true });
@@ -166,16 +192,27 @@ export class AiSdkConnectTransport implements ChatTransport<UIMessage> {
           return;
         }
 
-        port.postMessage({
-          type: 'send-messages',
-          requestId,
-          chatId,
-          messageId,
-          messages,
-          modelConfigId: this.options.getModelConfigId?.() ?? null,
-          system: this.options.getSystemMessage?.() ?? undefined,
-          trigger,
-        } satisfies AiSdkConnectBridgeClientMessage);
+        try {
+          port.postMessage({
+            type: 'send-messages',
+            requestId,
+            chatId,
+            messageId,
+            messages,
+            modelConfigId: this.options.getModelConfigId?.() ?? null,
+            system: this.options.getSystemMessage?.() ?? undefined,
+            trigger,
+          } satisfies AiSdkConnectBridgeClientMessage);
+        } catch (error) {
+          // `port.postMessage` throws when the other end is already gone (the
+          // service worker was evicted, or the extension reloaded under an open
+          // page). Letting it escape would error the stream through the
+          // ReadableStream constructor *without* running any teardown, leaving
+          // the listeners registered on a dead port.
+          logger.warn('[AiSdkConnectTransport] Failed to send the request frame:', error);
+          errorStream({ message: BRIDGE_UNREACHABLE_MESSAGE });
+          return;
+        }
         markTiming('前台请求已发往后台');
       },
       cancel() {
@@ -186,7 +223,12 @@ export class AiSdkConnectTransport implements ChatTransport<UIMessage> {
         } catch {
           // ignore
         } finally {
-          port.disconnect();
+          // Tear down through the same path as every other exit: a bare
+          // `port.disconnect()` left `onMessage`/`onDisconnect`/the abort
+          // listener registered (only the mock happens to re-fire
+          // onDisconnect on disconnect) and never marked the stream closed.
+          closed = true;
+          closePort();
         }
       },
     });

@@ -30,6 +30,11 @@ export function __getMockStorage(): StorageData {
  * break instance-field access from a plain method.
  */
 export class MockPort {
+  /** Set by the test so the bridge recognises the port by name. */
+  name = '';
+  /** Set by the test to pass (or fail) `isTrustedSender`. */
+  sender: unknown = { id: TEST_EXTENSION_ID };
+
   readonly posted: unknown[] = [];
   disconnected = false;
 
@@ -94,6 +99,23 @@ export function __failNextStorageRemove() {
   failNextRemove = true;
 }
 
+/** The extension id the mock runtime reports; tests may use it in `port.sender`. */
+export const TEST_EXTENSION_ID = 'kuai-kan-test-extension';
+
+type ConnectListener = (port: MockPort) => void;
+
+const connectListeners: ConnectListener[] = [];
+
+/** Test helper: deliver a port to every registered `runtime.onConnect` listener. */
+export function __emitConnect(port: MockPort) {
+  for (const listener of [...connectListeners]) listener(port);
+}
+
+/** Test helper: drop listeners between suites so a bridge is not registered twice. */
+export function __resetMockRuntime() {
+  connectListeners.length = 0;
+}
+
 export const browser = {
   storage: {
     local: {
@@ -123,6 +145,16 @@ export const browser = {
     },
   },
   runtime: {
+    id: TEST_EXTENSION_ID,
     connect: () => portFactory(),
+    onConnect: {
+      addListener: (listener: ConnectListener) => {
+        connectListeners.push(listener);
+      },
+      removeListener: (listener: ConnectListener) => {
+        const index = connectListeners.indexOf(listener);
+        if (index >= 0) connectListeners.splice(index, 1);
+      },
+    },
   },
 };

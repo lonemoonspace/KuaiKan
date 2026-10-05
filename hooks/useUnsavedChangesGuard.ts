@@ -22,4 +22,22 @@ export function useUnsavedChangesGuard(shouldBlock: () => boolean, message: stri
     if (window.confirm(message)) blocker.proceed();
     else blocker.reset();
   }, [blocker, message]);
+
+  // `useBlocker` only sees in-app (react-router) navigations. Closing the tab,
+  // reloading, or typing another URL bypasses it entirely, so a half-typed API
+  // key used to disappear without any prompt. A `beforeunload` listener covers
+  // those exits; the browser prints its own generic confirmation, so `message`
+  // is deliberately not used here.
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!shouldBlock()) return;
+
+      event.preventDefault();
+      // Chrome only shows the confirmation when `returnValue` is set.
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [shouldBlock]);
 }

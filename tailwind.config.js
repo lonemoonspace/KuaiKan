@@ -78,6 +78,13 @@ export default {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        /**
+         * The semantic accent `assets/theme.css` already ships for caveats
+         * (`--tone-caution`, light/dark aware). Registering it here lets the
+         * options/popup surfaces use `text-caution` etc. instead of their own
+         * hardcoded amber-* shades.
+         */
+        caution: 'hsl(var(--tone-caution))',
       },
       borderRadius: {
         lg: 'var(--radius)',

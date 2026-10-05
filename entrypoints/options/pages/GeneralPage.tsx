@@ -61,26 +61,10 @@ const EXTRACT_METHOD_OPTIONS: PageTextExtractMethod[] = [
 
 const LOG_LEVEL_OPTIONS: LogLevel[] = ['debug', 'info', 'warn', 'error', 'silent'];
 
-const OVERFLOW_LABELS: Record<
-  SummaryInputExceedBehaviour,
-  { label: string; description: string }
-> = {
-  front: { label: '保留开头', description: '保留正文开头（默认）。' },
-  middle: { label: '保留首尾', description: '保留开头与结尾，中间用占位符标记。' },
-  back: { label: '保留结尾', description: '保留正文结尾部分。' },
-  nothing: { label: '不裁剪', description: '原样发送全部内容（可能超出模型上限）。' },
-};
-
 type BooleanSettingKey = Exclude<
   GeneralSettingKey,
   'pageTextExtractMethod' | 'logLevel' | 'summaryInputExceedBehaviour' | 'panelFontSize'
 >;
-
-const PANEL_FONT_SIZE_OPTIONS: Array<{ label: string; value: PanelFontSize }> = [
-  { label: '小', value: 'small' },
-  { label: '中', value: 'medium' },
-  { label: '大', value: 'large' },
-];
 
 /**
  * One switch per row, grouped under a lightweight label. Everything shares the
@@ -129,7 +113,7 @@ function Row({
           </span>
         ) : null}
         {caution ? (
-          <span className="mt-1 block border-l-2 border-amber-500 bg-amber-50 px-2 py-0.5 text-[11px] leading-4 text-amber-950 dark:bg-amber-500/10 dark:text-amber-200">
+          <span className="mt-1 block border-l-2 border-caution/60 bg-caution/10 px-2 py-0.5 text-[11px] leading-4 text-caution">
             {caution}
           </span>
         ) : null}
@@ -177,6 +161,17 @@ export function GeneralPage() {
   const [promptSettings, setPromptSettings] = useState<PromptSettings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  const overflowLabels: Record<
+    SummaryInputExceedBehaviour,
+    { label: string; description: string }
+  > = messages.general.overflow;
+  const panelFontSizeOptions: Array<{ label: string; value: PanelFontSize }> = (
+    ['small', 'medium', 'large'] as const
+  ).map((value) => ({
+    label: messages.general.panelFontSize.options[value],
+    value,
+  }));
 
   useEffect(() => {
     let active = true;
@@ -270,7 +265,7 @@ export function GeneralPage() {
 
   async function restoreDefaults() {
     if (!settings || isSaving) return;
-    if (!window.confirm('把所有通用设置恢复为默认值？')) return;
+    if (!window.confirm(messages.general.restoreDefaultsConfirm)) return;
 
     const previous = settings;
     const defaults = createDefaultGeneralSettings();
@@ -365,9 +360,9 @@ export function GeneralPage() {
     <Segmented
       onChange={(value) => setTheme(value)}
       options={[
-        { label: '浅色', value: 'light' as const },
-        { label: '深色', value: 'dark' as const },
-        { label: '跟随系统', value: 'system' as const },
+        { label: messages.general.theme.options.light, value: 'light' as const },
+        { label: messages.general.theme.options.dark, value: 'dark' as const },
+        { label: messages.general.theme.options.system, value: 'system' as const },
       ]}
       value={theme as 'light' | 'dark' | 'system'}
     />
@@ -377,32 +372,35 @@ export function GeneralPage() {
     <div className="max-w-4xl pb-16">
       <OptionsPageTitle>{messages.general.title}</OptionsPageTitle>
 
-      <Group label="界面与显示">
-        <Row control={themeControl} description="设置页与页面内面板共用。" label="主题" />
+      <Group label={messages.general.groups.appearance}>
+        <Row
+          control={themeControl}
+          description={messages.general.theme.description}
+          label={messages.general.theme.label}
+        />
         <Row
           control={
             <Segmented
               onChange={(value) => updateSetting('panelFontSize', value)}
-              options={PANEL_FONT_SIZE_OPTIONS}
+              options={panelFontSizeOptions}
               value={settings.panelFontSize}
             />
           }
-          description="页面内面板里总结正文的大小，已打开的面板立即生效。"
-          label="面板字号"
+          description={messages.general.panelFontSize.description}
+          label={messages.general.panelFontSize.label}
           storageKey={GENERAL_SETTING_DEFINITIONS.panelFontSize.storageKey}
         />
-        {toggleRow('enableFloatingBall')}
         {toggleRow('enableTokenUsageView')}
       </Group>
 
-      <Group label="总结触发">
+      <Group label={messages.general.groups.triggers}>
         {toggleRow('enableSummaryWindowDefault')}
         {toggleRow('enableAutoBeginSummary')}
         {toggleRow('enableAutoBeginSummaryByActionOrContextTrigger')}
         {toggleRow('enableContextMenuSummarizeThisPage')}
       </Group>
 
-      <Group label="默认模型与提示词">
+      <Group label={messages.general.groups.defaults}>
         <Row
           control={
             modelSettings ? (
@@ -441,7 +439,7 @@ export function GeneralPage() {
               <div className="h-8 w-[200px] animate-pulse rounded-md bg-muted" />
             )
           }
-          description="新开的总结面板默认使用。"
+          description={messages.general.defaultModelDescription}
           label={messages.options.header.defaultModel}
         />
         <Row
@@ -479,7 +477,7 @@ export function GeneralPage() {
         />
       </Group>
 
-      <Group label="页面内容">
+      <Group label={messages.general.groups.pageContent}>
         <Row
           control={
             <Segmented
@@ -502,19 +500,19 @@ export function GeneralPage() {
             <Segmented
               onChange={(value) => updateSetting('summaryInputExceedBehaviour', value)}
               options={SUMMARY_INPUT_EXCEED_BEHAVIOURS.map((behaviour) => ({
-                label: OVERFLOW_LABELS[behaviour].label,
+                label: overflowLabels[behaviour].label,
                 value: behaviour,
               }))}
               value={settings.summaryInputExceedBehaviour}
             />
           }
-          description={OVERFLOW_LABELS[settings.summaryInputExceedBehaviour].description}
-          label="超长内容"
+          description={overflowLabels[settings.summaryInputExceedBehaviour].description}
+          label={messages.general.overflowRowLabel}
           storageKey={GENERAL_SETTING_DEFINITIONS.summaryInputExceedBehaviour.storageKey}
         />
       </Group>
 
-      <Group label="高级">
+      <Group label={messages.general.groups.advanced}>
         <Row
           control={
             <Select
@@ -535,8 +533,8 @@ export function GeneralPage() {
               </SelectContent>
             </Select>
           }
-          description="排查问题时把级别调低。"
-          label="日志级别"
+          description={messages.general.logLevel.description}
+          label={messages.general.logLevel.label}
           storageKey={GENERAL_SETTING_DEFINITIONS.logLevel.storageKey}
         />
       </Group>

@@ -31,18 +31,31 @@ function App() {
   useEffect(() => {
     let active = true;
     (async () => {
-      await sendExtMessage('seedPromptLibrary');
-      const modelSettings = await loadModelSettings();
-      if (!active) return;
-      setModels(modelSettings.models);
-      setCurrentModelId(
-        modelSettings.defaultModelId || modelSettings.models[0]?.id || '',
-      );
+      // Seeding is best-effort: the background worker may not be awake yet, and
+      // a rejection here used to abort this whole effect, leaving the popup with
+      // an empty model list.
+      try {
+        await sendExtMessage('seedPromptLibrary');
+      } catch (error) {
+        logger.warn('Prompt library seeding failed.', error);
+      }
+
+      try {
+        const modelSettings = await loadModelSettings();
+        if (!active) return;
+        setModels(modelSettings.models);
+        setCurrentModelId(
+          modelSettings.defaultModelId || modelSettings.models[0]?.id || '',
+        );
+      } catch (error) {
+        logger.error('Failed to load model settings.', error);
+        if (active) toast.error(messages.models.loadFailed);
+      }
     })();
     return () => {
       active = false;
     };
-  }, []);
+  }, [messages.models.loadFailed]);
 
   useEffect(() => {
     let active = true;
@@ -80,6 +93,7 @@ function App() {
   // this key) and surface a failure instead of leaving the select showing a
   // value that was never persisted.
   const handleConfigChange = async (id: string) => {
+    const previousModelId = currentModelId;
     setCurrentModelId(id);
 
     try {
@@ -90,6 +104,8 @@ function App() {
       setModels(response.settings.models);
     } catch (e) {
       logger.error('[popup] failed to set the default model config', e);
+      // Do not keep showing a default that was never persisted.
+      setCurrentModelId(previousModelId);
       toast.error(messages.popup.defaultModelFailed);
     }
   };
@@ -100,6 +116,7 @@ function App() {
     const config = models.find((m) => m.id === currentModelId);
     if (!config || !modelId) return;
 
+    const previousModels = models;
     setModels((current) =>
       current.map((m) => (m.id === config.id ? { ...m, modelId } : m)),
     );
@@ -113,6 +130,8 @@ function App() {
       setModels(response.settings.models);
     } catch (e) {
       logger.error('[popup] failed to switch the model id', e);
+      // Roll the optimistic edit back; the config still points at the old model.
+      setModels(previousModels);
       toast.error(messages.popup.modelSwitchFailed);
     }
   };
@@ -198,7 +217,7 @@ function App() {
 
   return (
     <main className="grid min-w-[320px] max-w-3xl gap-3 bg-background px-3 py-3">
-      <div className={cn('flex items-center gap-2 rounded-lg border px-3 py-2 text-xs', isContentPage ? 'border-primary/20 bg-primary/5 text-primary' : 'border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300')}>
+      <div className={cn('flex items-center gap-2 rounded-lg border px-3 py-2 text-xs', isContentPage ? 'border-primary/20 bg-primary/5 text-primary' : 'border-caution/30 bg-caution/5 text-caution')}>
         {isContentPage ? <CheckCircle2 className="size-4 shrink-0" /> : <AlertCircle className="size-4 shrink-0" />}
         <span>{isContentPage ? messages.popup.pageSupported : messages.popup.pageUnsupported}</span>
       </div>

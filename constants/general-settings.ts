@@ -46,10 +46,23 @@ export function isPanelFontSize(value: unknown): value is PanelFontSize {
   );
 }
 
-const LOG_LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3, silent: 4 };
+/**
+ * Rank of every log level. Exported so the logger ranks with the very same
+ * table this module validates against — the two copies could (and did) drift.
+ */
+export const LOG_LEVELS: Record<LogLevel, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+  silent: 4,
+};
 
 export function isLogLevel(value: unknown): value is LogLevel {
-  return typeof value === 'string' && value in LOG_LEVELS;
+  // `Object.hasOwn`, not `in`: an inherited `Object.prototype` key (a stored
+  // 'constructor' or 'toString') satisfies `in`, and `LOG_LEVELS['constructor']`
+  // is a function, so the level comparison silently disabled all logging.
+  return typeof value === 'string' && Object.hasOwn(LOG_LEVELS, value);
 }
 
 function booleanSetting(
@@ -120,7 +133,6 @@ export const GENERAL_SETTING_DEFINITIONS = {
     'local:page-text-extract-method',
     'readability',
   ),
-  enableFloatingBall: booleanSetting('local:enable-floating-ball', true),
   panelFontSize: panelFontSizeSetting('local:panel-font-size', 'medium'),
   enableSummaryWindowDefault: booleanSetting(
     'local:enable-summary-window-default',

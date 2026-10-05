@@ -4,6 +4,7 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { getUiMessages } from '@/lib/i18n';
 import { loadGeneralSettings } from '@/lib/general-settings-storage';
 import { parsePageContent } from '@/lib/page-extraction';
+import { setPortalContainer } from '@/lib/portal-container';
 import { ContentEntrance } from './ContentEntrance';
 
 import { onMessage } from '@/lib/messaging';
@@ -32,13 +33,18 @@ async function mountSummaryBadge(ctx: ContentScriptContext) {
     anchor: 'body',
     append: 'last',
     zIndex: 2147483647,
-    onMount(container, _shadow, shadowHost) {
+    onMount(container, shadow, shadowHost) {
       host = shadowHost;
+      // Portaled Radix content (the message toolbar's tooltip) must live inside
+      // this shadow root: `cssInjectionMode: 'ui'` puts the stylesheet here, so
+      // a default `document.body` portal rendered unstyled.
+      setPortalContainer(shadow);
       const root = createRoot(container);
       root.render(createElement(ContentEntrance, { ctx }));
       return root;
     },
     onRemove(root) {
+      setPortalContainer(null);
       root?.unmount();
     },
   });

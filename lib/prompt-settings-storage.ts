@@ -103,7 +103,7 @@ function validateDraft(draft: PromptDraft) {
     !normalizedDraft.systemMessage ||
     !normalizedDraft.userMessage
   ) {
-    throw new Error('Prompt name, system message, and user message are required.');
+    throw new Error('请填写提示词名称、系统消息和用户消息。');
   }
 
   return normalizedDraft;
@@ -246,13 +246,13 @@ export async function updatePrompt(id: string, draft: PromptDraft) {
   const index = settings.prompts.findIndex((prompt) => prompt.id === id);
 
   if (index === -1) {
-    throw new Error('Prompt not found.');
+    throw new Error('未找到该提示词。');
   }
 
   const normalizedDraft = validateDraft(draft);
 
   if (isDuplicateName(settings.prompts, normalizedDraft.name, id)) {
-    throw new Error('Prompt name already exists.');
+    throw new Error('提示词名称已存在。');
   }
 
   settings.prompts[index] = {
@@ -377,14 +377,4 @@ export async function seedPromptLibraryInBackground(): Promise<PromptConfigItem 
   });
 
   return backgroundSeedingPromise;
-}
-
-/**
- * Request seeding from the background. Kept for callers in other contexts so
- * the actual read-modify-write never races across contexts.
- */
-export async function seedDefaultPromptIfNeeded(): Promise<PromptConfigItem | null> {
-  const { sendMessage } = await import('@/lib/messaging');
-  await sendMessage('seedPromptLibrary');
-  return null;
 }

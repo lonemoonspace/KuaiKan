@@ -1,15 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
-import RightFloatingBallContainer from '@/components/container/RightFloatingBallContainer';
-import useWxtStorage from '@/hooks/useWxtStorage';
-import { getUiMessages } from '@/lib/i18n';
 import { onMessage, sendMessage } from '@/lib/messaging';
 import { PanelContainer } from '@/components/container/PanelContainer';
 import { ContentAppFrame } from '@/entrypoints/content/summary/ContentAppFrame';
-import iconUrl from '@/assets/16.png';
 import { ThemeProvider } from '@/components/theme-provider';
-import { GENERAL_SETTING_DEFINITIONS } from '@/constants/general-settings';
 import { loadGeneralSettings } from '@/lib/general-settings-storage';
 import { setCurrentPageSelection } from '@/lib/page-selection';
 import { getPageKey, persistableMessages, type PanelSnapshotPatch } from '@/lib/panel-snapshot';
@@ -25,11 +20,6 @@ function savePanelSnapshot(pageKey: string, patch: PanelSnapshotPatch) {
 }
 
 export function ContentEntrance({ ctx }: { ctx: ContentScriptContext }) {
-  const [enableFloatingBall, setEnableFloatingBall] = useWxtStorage<boolean>(
-    GENERAL_SETTING_DEFINITIONS.enableFloatingBall.storageKey,
-    GENERAL_SETTING_DEFINITIONS.enableFloatingBall.defaultValue as boolean
-  );
-
   const [mainPanelOpen, setMainPanelOpen] = useState(false);
   // A pending "summarize now" request, bound to the page it was made on and
   // cleared once the frame picks it up, so a frame that mounts later (another
@@ -48,11 +38,9 @@ export function ContentEntrance({ ctx }: { ctx: ContentScriptContext }) {
   const [restoredPageKey, setRestoredPageKey] = useState<string | null>(null);
   // Latest summary per page, so reopening a closed panel shows it again.
   const pageMessagesRef = useRef(new Map<string, UIMessage[]>());
-  // An explicit open (context menu, popup, floating ball) that lands while the
+  // An explicit open (context menu, popup) that lands while the
   // snapshot is still loading must not be undone by the restore.
   const openedExplicitlyRef = useRef(false);
-
-  const messages = getUiMessages();
 
   const setPanelOpen = useCallback((open: boolean) => {
     openedExplicitlyRef.current = open;
@@ -215,32 +203,6 @@ export function ContentEntrance({ ctx }: { ctx: ContentScriptContext }) {
           </PanelContainer>
         )
       }
-
-      {/* Floating Ball Trigger — shown only when main panel is closed */}
-      {enableFloatingBall && !mainPanelOpen && (
-        <RightFloatingBallContainer
-          storageKey="page"
-          onClose={() => setEnableFloatingBall(false)}
-        >
-          <div
-            onClick={() => setPanelOpen(true)}
-            className="relative flex items-center justify-center p-1.5 rounded-full border border-primary/20 bg-card/80 hover:bg-accent hover:border-primary/40 transition-all duration-200 shadow-sm cursor-pointer group"
-            title={messages.content.badgeLabel}
-          >
-            <img
-              src={iconUrl}
-              alt="Logo"
-              className="w-6 h-6 rounded-md select-none pointer-events-none"
-              draggable={false}
-            />
-
-            {/* Premium Tooltip on hover */}
-            <div className="absolute right-12 top-1/2 -translate-y-1/2 rounded bg-zinc-900/90 px-2 py-1 text-[11px] font-medium text-white opacity-0 group-hover:opacity-100 scale-95 group-hover:scale-100 transition-all duration-200 pointer-events-none whitespace-nowrap shadow-md">
-              {messages.content.badgeLabel}
-            </div>
-          </div>
-        </RightFloatingBallContainer>
-      )}
     </ThemeProvider>
   );
 }

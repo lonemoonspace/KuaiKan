@@ -233,11 +233,11 @@ function validateDraft(draft: ModelDraft): ModelDraft {
   const baseURL = normalizeBaseURL(draft.providerId, provider, draft.baseURL);
 
   if (!name || !modelId) {
-    throw new Error('Model name and model id are required.');
+    throw new Error('请填写模型名称与模型 ID。');
   }
 
   if (provider.supportsBaseURL && !baseURL) {
-    throw new Error('Base URL is required.');
+    throw new Error('请填写 Base URL。');
   }
 
   return {
@@ -262,13 +262,13 @@ function normalizeFetchDraft(draft: ModelDraft) {
   const provider = getModelProviderDefinition(draft.providerId);
 
   if (!provider.supportsModelFetch || !provider.modelsPath) {
-    throw new Error('This provider does not expose a configured models endpoint.');
+    throw new Error('该提供商没有可用的模型列表接口。');
   }
 
   const baseURL = normalizeBaseURL(draft.providerId, provider, draft.baseURL);
 
   if (provider.supportsBaseURL && !baseURL) {
-    throw new Error('Base URL is required.');
+    throw new Error('请填写 Base URL。');
   }
 
   return { baseURL, providerId: draft.providerId };
@@ -427,13 +427,13 @@ export async function updateModelConfig(id: string, draft: ModelDraft) {
   const index = settings.models.findIndex((model) => model.id === id);
 
   if (index === -1) {
-    throw new Error('Model not found.');
+    throw new Error('未找到该模型配置。');
   }
 
   const normalizedDraft = validateDraft(draft);
 
   if (isDuplicateName(settings.models, normalizedDraft.name, id)) {
-    throw new Error('Model name already exists.');
+    throw new Error('模型名称已存在。');
   }
 
   settings.models[index] = {
@@ -539,18 +539,35 @@ export function createEmptyModelDraft() {
   return createDefaultModelDraft('openai-compatible');
 }
 
+/**
+ * How long the settings page waits for a remote model list before giving up.
+ * Without it a server that accepts the connection and then never responds
+ * (stalled local model, wedged proxy) left the Fetch button disabled and
+ * reading "Fetching" forever, with no way to cancel.
+ */
+export const REMOTE_MODEL_FETCH_TIMEOUT_MS = 15_000;
+
 export async function fetchRemoteModels(
   draft: ModelDraft,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<RemoteModelInfo[]> {
   const normalized = normalizeFetchDraft(draft);
   const provider = getModelProviderDefinition(normalized.providerId);
 
-  const endpoint = new URL(
-    provider.modelsPath!.replace(/^\/+/, ''),
-    normalized.baseURL.endsWith('/')
-      ? normalized.baseURL
-      : `${normalized.baseURL}/`,
-  );
+  let endpoint: URL;
+  try {
+    endpoint = new URL(
+      provider.modelsPath!.replace(/^\/+/, ''),
+      normalized.baseURL.endsWith('/')
+        ? normalized.baseURL
+        : `${normalized.baseURL}/`,
+    );
+  } catch {
+    // `new URL` throws a bare TypeError for a malformed base URL; surface
+    // something the settings page can show as-is.
+    throw new Error('Base URL 格式不正确，无法拼接模型列表地址。');
+  }
+
   const headers: Record<string, string> = cleanHeaders(draft.headers);
   const apiKey = cleanString(draft.apiKey);
 
@@ -558,14 +575,42 @@ export async function fetchRemoteModels(
     headers.Authorization = headers.Authorization || `Bearer ${apiKey}`;
   }
 
-  const response = await fetch(endpoint, { headers });
-  const payload = (await response.json().catch(() => null)) as unknown;
+  const timeoutMs = options.timeoutMs ?? REMOTE_MODEL_FETCH_TIMEOUT_MS;
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const forwardAbort = () => controller.abort();
+  options.signal?.addEventListener('abort', forwardAbort, { once: true });
 
-  if (!response.ok) {
-    throw new Error(extractErrorMessage(payload) || `${response.status} ${response.statusText}`);
+  try {
+    const response = await fetch(endpoint, {
+      headers,
+      signal: controller.signal,
+    });
+    const payload = (await response.json().catch(() => null)) as unknown;
+
+    if (!response.ok) {
+      throw new Error(extractErrorMessage(payload) || `${response.status} ${response.statusText}`);
+    }
+
+    return extractRemoteModels(payload);
+  } catch (error) {
+    if (timedOut) {
+      throw new Error(
+        `获取模型列表超时（${Math.round(timeoutMs / 1000)} 秒），请检查 Base URL 是否可达。`,
+      );
+    }
+    if (options.signal?.aborted) {
+      throw new Error('已取消获取模型列表。');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    options.signal?.removeEventListener('abort', forwardAbort);
   }
-
-  return extractRemoteModels(payload);
 }
 
 function extractErrorMessage(payload: unknown) {

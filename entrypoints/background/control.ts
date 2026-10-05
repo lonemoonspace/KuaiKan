@@ -42,12 +42,19 @@ export function registerControlMessages() {
  * Pages no content script can run on. Asking the tab whether it is alive would
  * only burn the retry budget (~2.3s) before failing, so these are recognised up
  * front.
+ *
+ * `file:` is deliberately NOT in this list: a `file://` page works fine once
+ * the user grants "Allow access to file URLs", and there is no synchronous way
+ * to ask whether that toggle is on. When it is off, the very first probe fails
+ * with an injection-forbidden error, which the retry loop below already treats
+ * as final -- so the cost of trying is one probe, and the gain is that local
+ * pages can be summarized at all.
  */
 function isUnsupportedPageUrl(url: string | undefined): boolean {
   if (!url) return false;
 
   return (
-    /^(chrome|edge|brave|about|devtools|view-source|chrome-extension|moz-extension|file):/i.test(
+    /^(chrome|edge|brave|about|devtools|view-source|chrome-extension|moz-extension):/i.test(
       url,
     ) ||
     /^https?:\/\/(chrome\.google\.com\/webstore|chromewebstore\.google\.com)/i.test(url)

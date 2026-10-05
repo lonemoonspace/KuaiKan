@@ -27,6 +27,7 @@ import {
   type ModelProviderId,
 } from '@/constants/model-settings';
 import { resolveModelIconUrl } from '@/lib/model-icon';
+import { focusNextInside } from '@/lib/focus-trap';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import {
   fetchRemoteModels,
@@ -147,6 +148,12 @@ export function ModelEditor({
     setAreBaseURLPresetsExpanded(false);
   }, [initialDraft]);
 
+  // The fetch can outlive the page (the user navigates away while a stalled
+  // server never answers), so abort it on unmount: `fetchRemoteModels` has its
+  // own timeout, but nothing should resolve into component state afterwards.
+  const remoteModelsAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => remoteModelsAbortRef.current?.abort(), []);
+
   function updateDraft<Key extends keyof ModelDraft>(
     key: Key,
     value: ModelDraft[Key],
@@ -186,16 +193,27 @@ export function ModelEditor({
   }
 
   async function loadRemoteModels() {
+    // A second click supersedes the first request instead of racing it; the
+    // superseded promise resolves into no state update at all.
+    remoteModelsAbortRef.current?.abort();
+    const controller = new AbortController();
+    remoteModelsAbortRef.current = controller;
+
     setIsLoadingModels(true);
 
     try {
-      const models = await fetchRemoteModels({
-        ...draft,
-        extraBody: parseJsonObject(extraBodyText, 'Extra body'),
-        headers: parseJsonObject(headersText, 'Headers', {
-          stringValuesOnly: true,
-        }) as Record<string, string>,
-      });
+      const models = await fetchRemoteModels(
+        {
+          ...draft,
+          extraBody: parseJsonObject(extraBodyText, 'Extra body'),
+          headers: parseJsonObject(headersText, 'Headers', {
+            stringValuesOnly: true,
+          }) as Record<string, string>,
+        },
+        { signal: controller.signal },
+      );
+
+      if (controller.signal.aborted) return;
 
       setRemoteModels(models);
 
@@ -216,9 +234,16 @@ export function ModelEditor({
       setIsModelPickerOpen(true);
       toast.success(`${models.length} models loaded.`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Models failed to load.');
+      // An abort is either a superseded request or an unmount: neither is a
+      // failure the user needs to hear about.
+      if (!controller.signal.aborted) {
+        toast.error(error instanceof Error ? error.message : '模型配置加载失败。');
+      }
     } finally {
-      setIsLoadingModels(false);
+      if (remoteModelsAbortRef.current === controller) {
+        remoteModelsAbortRef.current = null;
+        setIsLoadingModels(false);
+      }
     }
   }
 
@@ -339,7 +364,7 @@ export function ModelEditor({
                 </DialogTrigger>
                 <DialogContent className="max-w-md">
                   <DialogHeader>
-                    <DialogTitle>Select Model Icon</DialogTitle>
+                    <DialogTitle>{messages.models.selectModelIcon}</DialogTitle>
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
                     <div className="flex flex-wrap gap-2">
@@ -811,18 +836,50 @@ function ModelPickerModal({
   onSelect: (model: RemoteModelInfo) => void;
   selectedModelId: string;
 }) {
+  const messages = getUiMessages();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Focus the dialog on mount and close it on Escape: without this the only
+  // ways out were the close button and picking a model, and Escape went to the
+  // page behind the overlay.
+  useEffect(() => {
+    const node = containerRef.current;
+    node?.focus();
+
+    if (!node) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose();
+        return;
+      }
+
+      // Keep Tab inside the dialog instead of walking into the page behind it.
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        focusNextInside(node, event.shiftKey);
+      }
+    };
+
+    node.addEventListener('keydown', handleKeyDown);
+    return () => node.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   return (
     <div
       aria-modal="true"
       className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4"
+      ref={containerRef}
       role="dialog"
+      tabIndex={-1}
     >
       <section className="grid max-h-[min(680px,90vh)] w-full max-w-2xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-md border bg-background shadow-xl">
         <header className="flex items-center gap-3 border-b px-4 py-3">
-          <h2 className="text-base font-semibold">Select Model</h2>
+          <h2 className="text-base font-semibold">{messages.models.selectModel}</h2>
           <div className="grow" />
           <Button
-            aria-label="Close"
+            aria-label={messages.common.close}
             onClick={onClose}
             size="icon"
             type="button"

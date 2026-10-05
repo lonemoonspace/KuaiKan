@@ -29,11 +29,10 @@ export async function loadGeneralSettings(): Promise<GeneralSettings> {
  *
  * `baseline` is the snapshot the caller loaded when its form mounted. Diffing
  * against that — rather than against whatever is in storage right now — is what
- * makes this safe: a key changed by another context in the meantime (e.g. the
- * content script writing `enable-floating-ball=false` when the user dismisses
- * the ball) is neither in the diff nor overwritten. Diffing against current
- * storage would do the opposite, flagging that concurrent change as a user edit
- * and reverting it.
+ * makes this safe: a key changed by another context in the meantime (e.g. a
+ * second options tab that saved a switch while this form was open) is neither
+ * in the diff nor overwritten. Diffing against current storage would do the
+ * opposite, flagging that concurrent change as a user edit and reverting it.
  *
  * Without a baseline every field is written, which is the old whole-object
  * behaviour and only correct when the caller genuinely owns all of them.

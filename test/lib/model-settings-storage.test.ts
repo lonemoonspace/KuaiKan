@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // lib/model-settings-storage.ts reads/writes through `storage` from '#imports'
 // (aliased in vitest.config.ts to test/mocks/imports.ts, whose getItems/setItems
@@ -35,6 +35,7 @@ import {
 } from '@/constants/model-settings';
 import {
   extractRemoteModels,
+  fetchRemoteModels,
   loadModelSettings,
   replaceModelSettings,
   setModelConfigModelId,
@@ -362,5 +363,70 @@ describe('legacy ollama base URLs', () => {
     const settings = await loadModelSettings();
 
     expect(settings.models[0].baseURL).toBe('http://localhost:11434/v1');
+  });
+});
+
+describe('fetchRemoteModels', () => {
+  const draft = (overrides: Partial<ReturnType<typeof createDefaultModelDraft>> = {}) => ({
+    ...createDefaultModelDraft('openai-compatible'),
+    baseURL: 'https://api.example.com/v1',
+    ...overrides,
+  });
+
+  // Resolves only when the request is aborted, which is the "server accepted
+  // the connection and then went quiet" case the timeout exists for.
+  const neverRespondingFetch = (_url: unknown, init?: RequestInit) =>
+    new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () =>
+        reject(new DOMException('Aborted', 'AbortError')),
+      );
+    });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('fetches the model list from the provider path with the API key', async () => {
+    const fetchMock = vi.fn(async (url: URL, init?: RequestInit) => {
+      expect(String(url)).toBe('https://api.example.com/v1/models');
+      expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer sk-test');
+      return new Response(JSON.stringify({ data: [{ id: 'gpt-4o' }] }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchRemoteModels(draft({ apiKey: 'sk-test' }))).resolves.toEqual([
+      { id: 'gpt-4o', label: 'gpt-4o' },
+    ]);
+  });
+
+  it('reports a malformed base URL instead of throwing a bare TypeError', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+
+    await expect(fetchRemoteModels(draft({ baseURL: 'not a url' }))).rejects.toThrow(
+      'Base URL 格式不正确',
+    );
+  });
+
+  it('gives up after the timeout instead of hanging forever', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', neverRespondingFetch);
+
+    const promise = fetchRemoteModels(draft(), { timeoutMs: 1_000 });
+    const rejection = expect(promise).rejects.toThrow('获取模型列表超时');
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await rejection;
+  });
+
+  it('honours a caller-provided abort signal', async () => {
+    const controller = new AbortController();
+    vi.stubGlobal('fetch', neverRespondingFetch);
+
+    const promise = fetchRemoteModels(draft(), { signal: controller.signal });
+    const rejection = expect(promise).rejects.toThrow('已取消获取模型列表');
+
+    controller.abort();
+    await rejection;
   });
 });

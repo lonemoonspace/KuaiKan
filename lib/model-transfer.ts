@@ -17,13 +17,27 @@ export type ModelExportFile = {
 
 export type ModelExportOptions = {
   /**
-   * Include `apiKey` and per-endpoint `headers`. Off by default: an export is a
-   * plain file that ends up in ~/Downloads, a synced folder or a chat message,
-   * and re-importing a credential-free row backfills the local key as long as
-   * the endpoint still matches (`mergeImportedModels`).
+   * Include `apiKey`, per-endpoint `headers` and the raw `extraBody` JSON. Off
+   * by default: an export is a plain file that ends up in ~/Downloads, a synced
+   * folder or a chat message, and re-importing a credential-free row backfills
+   * the local key as long as the endpoint still matches
+   * (`mergeImportedModels`). `extraBody` is user-authored JSON that the rest of
+   * the code treats as sensitive (`toPublicModelConfig` strips it), so it has to
+   * be cleared together with the two obvious fields.
    */
   includeSecrets?: boolean;
 };
+
+/** Refuse an oversized import before parsing it, not after. */
+export const MAX_MODEL_IMPORT_FILE_BYTES = 8 * 1024 * 1024;
+/** A hard cap on rows: every row is normalized and validated below. */
+export const MAX_MODEL_IMPORT_ROWS = 1000;
+
+/**
+ * How long a download keeps its blob URL alive. Revoking synchronously after
+ * `anchor.click()` can abort the download before the browser reads the blob.
+ */
+const DOWNLOAD_URL_REVOKE_DELAY_MS = 1000;
 
 export function buildModelExportFile(
   models: ModelConfigItem[],
@@ -42,7 +56,7 @@ export function buildModelExportFile(
     // A shallow copy per row: the caller's array is the one React is rendering.
     models: models.map((model) => ({
       ...model,
-      ...(includeSecrets ? {} : { apiKey: '', headers: {} }),
+      ...(includeSecrets ? {} : { apiKey: '', headers: {}, extraBody: {} }),
     })),
   };
 }
@@ -81,10 +95,37 @@ function normalizeBaseURL(value: unknown): string {
 }
 
 export function parseModelExportFile(raw: unknown): ParsedModelExport {
+  // A version bump must fail loudly. Without this check a future v2 file would
+  // be parsed as v1: the rows look plausible, so the mis-read would be silent.
+  // Legacy whole-storage backups carry no `type` marker and skip this.
+  if (isRecord(raw) && raw.type === MODEL_EXPORT_FILE_TYPE) {
+    const version = raw.version;
+    if (
+      typeof version !== 'number' ||
+      !Number.isInteger(version) ||
+      version < 1 ||
+      version > MODEL_EXPORT_FILE_VERSION
+    ) {
+      return {
+        ok: false,
+        error: `该导出文件的版本（${String(version)}）不是当前扩展支持的版本（${MODEL_EXPORT_FILE_VERSION}），请升级扩展后再导入。`,
+      };
+    }
+  }
+
   const rows = extractModelRows(raw);
 
   if (!rows) {
     return { ok: false, error: '文件不是 KuaiKan 的模型导出，或内容缺少 models 列表。' };
+  }
+
+  // The import runs migration + validation over every row, so an absurd file
+  // must be rejected up front instead of locking the options tab.
+  if (rows.length > MAX_MODEL_IMPORT_ROWS) {
+    return {
+      ok: false,
+      error: `文件中的模型配置过多（${rows.length} 条，最多 ${MAX_MODEL_IMPORT_ROWS} 条）。`,
+    };
   }
 
   // Rows from a backup taken before the V1 -> V2 migration carry
@@ -93,7 +134,7 @@ export function parseModelExportFile(raw: unknown): ParsedModelExport {
   // legacy whole-storage export path accepted below would reject the very rows
   // it exists to rescue.
   const { models: migratedRows } = migrateModelConfigs(
-    rows.filter(isRecord) as Record<string, any>[],
+    rows.filter(isRecord) as Record<string, unknown>[],
   );
 
   // Exactly the validation the write path uses, so "the file has models" and
@@ -164,5 +205,7 @@ export function downloadJsonFile(contents: string, filename: string) {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  // Revoking in the same task can cancel the download before the browser has
+  // read the blob (Firefox does exactly that), so release the URL a beat later.
+  setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_REVOKE_DELAY_MS);
 }

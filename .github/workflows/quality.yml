@@ -23,6 +23,22 @@ jobs:
       - name: Install
         run: npm ci
 
+      # AGENTS.md requires the version to be bumped in three places at once; a
+      # release that only edits package.json ships a manifest whose version
+      # disagrees with the lockfile. Cheap to check here, invisible otherwise.
+      - name: Version sync
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const lock = require("./package-lock.json");
+            const versions = [pkg.version, lock.version, lock.packages?.[""]?.version];
+            if (versions.some((version) => version !== pkg.version)) {
+              console.error(`version mismatch: package.json=${pkg.version} lock=${lock.version} lock.packages[""]=${lock.packages?.[""]?.version}`);
+              process.exit(1);
+            }
+            console.log(`version ${pkg.version} is in sync`);
+          '
+
       - name: Type-check
         run: npm run compile
 

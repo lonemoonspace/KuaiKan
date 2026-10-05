@@ -2,16 +2,9 @@ import { storage } from '#imports';
 import {
   type LogLevel,
   isLogLevel,
+  LOG_LEVELS,
   GENERAL_SETTING_DEFINITIONS,
 } from '@/constants/general-settings';
-
-const LOG_LEVELS: Record<LogLevel, number> = {
-  debug: 0,
-  info: 1,
-  warn: 2,
-  error: 3,
-  silent: 4,
-};
 
 let globalLogLevel: LogLevel | undefined;
 

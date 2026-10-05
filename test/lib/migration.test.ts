@@ -211,6 +211,27 @@ describe('runFullMigration (storage key handling)', () => {
     expect(finalStore['local:model-configs']).toBeUndefined();
   });
 
+  it('drops the storage keys orphaned by the removed floating-ball feature', async () => {
+    __resetMockStorage({
+      'enable-floating-ball': true,
+      'local:enable-floating-ball': true,
+      'right-floating-ball-top-page': 120,
+      'local:right-floating-ball-top-page': 120,
+      'panel-font-size': 'medium',
+    });
+
+    await runFullMigration();
+
+    const finalStore = __getMockStorage();
+    expect(finalStore['enable-floating-ball']).toBeUndefined();
+    expect(finalStore['local:enable-floating-ball']).toBeUndefined();
+    expect(finalStore['right-floating-ball-top-page']).toBeUndefined();
+    expect(finalStore['local:right-floating-ball-top-page']).toBeUndefined();
+    // A live setting sitting next to them must survive the pass.
+    expect(finalStore['panel-font-size']).toBe('medium');
+    expect(finalStore['migration-version']).toBe(CURRENT_MIGRATION_VERSION);
+  });
+
   it('clears prompt-library-seeded when the prompt list is empty but marked seeded, so re-seeding can happen', async () => {
     __resetMockStorage({
       'prompt-library-seeded': true,

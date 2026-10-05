@@ -31,6 +31,20 @@ export type TokenPiece = {
 
 export type SplitTokensResult = {
   model: typeof INPUT_TOKEN_COUNT_MODEL;
+  /**
+   * A bounded preview window (the first `MAX_TOKEN_PIECES` tokens of the
+   * input). The token viewer renders one DOM node per piece, so returning the
+   * whole article meant shipping a 100k-element message and committing 100k
+   * React nodes at once.
+   */
   pieces: TokenPiece[];
+  /** Tokens in the whole input, i.e. >= `pieces.length`. */
+  totalTokenCount: number;
+  /**
+   * Tokens the `middle` truncation strategy spends on its "content truncated"
+   * marker. The viewer subtracts it from the budget before splitting it into
+   * head/tail, so its dimmed region matches what the background actually keeps.
+   */
+  middleMarkerTokenCount: number;
   timing: InputTokenCountTiming;
 };

@@ -171,7 +171,7 @@ export function PromptsListPage() {
             const defaultPrompt = settings.prompts.find(p => p.id === settings.defaultPromptId);
             return defaultPrompt ? (
               <div className="text-sm font-bold text-primary">
-                Default: {defaultPrompt.name}
+                {messages.prompts.defaultBadge}: {defaultPrompt.name}
               </div>
             ) : null;
           })() : null}
@@ -260,7 +260,7 @@ export function PromptsListPage() {
 
                   <details className="mt-1.5">
                     <summary className="cursor-pointer select-none text-xs text-muted-foreground transition-colors hover:text-foreground">
-                      查看提示词内容
+                      {messages.prompts.viewPromptContent}
                     </summary>
                     <div className="mt-2 grid gap-3 lg:grid-cols-2">
                       <div className="grid min-w-0 gap-1">

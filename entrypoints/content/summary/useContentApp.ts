@@ -14,7 +14,7 @@ import { loadGeneralSettings } from '@/lib/general-settings-storage';
 import { parsePageContent, type WebpageContent } from '@/lib/page-extraction';
 import { getCurrentPageSelection } from '@/lib/page-selection';
 import { countInputTokens, truncateByTokens } from '@/lib/token-count';
-import { getEffectiveInputTokenLimit } from '@/lib/input-token-limit';
+import { computeSummaryInputBudgetForModel } from '@/lib/summary-input-budget';
 import {
   cachePageContent,
   cachePageContentTokenCount,
@@ -58,6 +58,32 @@ Mustache.escape = (value: string) => value;
 // While a summary streams in, save it at most this often, so a full page
 // navigation mid-stream still leaves most of it to restore.
 const PERSIST_THROTTLE_MS = 1000;
+
+type PromptTemplateVariables = {
+  articleUrl: string;
+  summaryLanguage: string;
+  currentSelection: string;
+};
+
+/**
+ * Tokens the prompt templates contribute *besides* the page text.
+ *
+ * Rendering them with an empty `textContent` measures the system message, the
+ * user template's own instructions, the article URL and the current selection
+ * without tokenizing the whole article. The page text is then truncated to
+ * whatever the model's window has left for it (lib/summary-input-budget.ts).
+ */
+async function measurePromptOverheadTokens(
+  prompt: Pick<PromptConfigItem, 'systemMessage' | 'userMessage'>,
+  variables: PromptTemplateVariables,
+): Promise<number> {
+  const emptyView = { ...variables, textContent: '' };
+  const [systemTokens, userTokens] = await Promise.all([
+    countInputTokens(Mustache.render(prompt.systemMessage, emptyView)),
+    countInputTokens(Mustache.render(prompt.userMessage, emptyView)),
+  ]);
+  return systemTokens + userTokens;
+}
 
 type UseContentAppOptions = {
   /** The summary this page showed last time; the chat starts from it. */
@@ -199,6 +225,18 @@ export function useContentApp({
     settings,
   };
 
+  // External triggers are routed through the extension message listener in
+  // ContentEntrance rather than a page-visible DOM event. useCallback keeps
+  // the reference stable so ContentAppFrame's trigger effect fires once per
+  // request instead of on every render (which caused an abort/restart loop).
+  //
+  // Declared above the error effect on purpose: the retry toast calls it, and a
+  // hook's dependency array is evaluated during render — referencing a value
+  // declared further down would read it in its temporal dead zone.
+  const beginSummary = useCallback(() => {
+    setAutoSummarizePending(true);
+  }, []);
+
   useEffect(() => {
     if (!error) return;
 
@@ -232,8 +270,22 @@ export function useContentApp({
       return;
     }
 
+    // `retryable` finally has a consumer: the taxonomy has always marked
+    // rate-limit/timeout/5xx as worth another attempt, but nothing read the
+    // flag, so the user had to find the summarize button again. Failures that
+    // are not retryable (bad model id, rejected key) stay actionless.
+    if (classification.retryable) {
+      toast.error(message, {
+        action: {
+          label: messagesI18n.content.retrySummary,
+          onClick: () => beginSummary(),
+        },
+      });
+      return;
+    }
+
     toast.error(message);
-  }, [error, messagesI18n.popup.openOptions]);
+  }, [error, messagesI18n.popup.openOptions, messagesI18n.content.retrySummary, beginSummary]);
 
   // Human-friendly copy for the header error indicator (mirrors the toast).
   const errorMessage = useMemo(() => {
@@ -296,7 +348,12 @@ export function useContentApp({
           markTiming('面板：命中正文缓存（含 innerText 校验）');
           pageHrefRef.current = window.location.href;
           setPageContent(cached.content);
-          if (cached.tokenCount !== null) {
+          if (!generalSettings.enableTokenUsageView) {
+            // Counting is not free: the background worker has to load the
+            // gpt-5 vocabulary (~2.6MB) on first use. Users who turned the
+            // token-usage UI off never see the number, so do not pay for it.
+            setPageContentTokenCount(null);
+          } else if (cached.tokenCount !== null) {
             setPageContentTokenCount(cached.tokenCount);
           } else {
             countInputTokens(cached.content.textContent)
@@ -321,14 +378,18 @@ export function useContentApp({
               markTiming('面板：写入正文缓存（innerText 签名）完成');
               pageHrefRef.current = window.location.href;
               setPageContent(extracted);
-              countInputTokens(extracted.textContent)
-                .then((count) => {
-                  markTiming('面板：token 计数 RPC 完成');
-                  if (!active) return;
-                  setPageContentTokenCount(count);
-                  cachePageContentTokenCount(window.location.href, count);
-                })
-                .catch((e) => logger.error('Failed to count tokens', e));
+              if (generalSettings.enableTokenUsageView) {
+                countInputTokens(extracted.textContent)
+                  .then((count) => {
+                    markTiming('面板：token 计数 RPC 完成');
+                    if (!active) return;
+                    setPageContentTokenCount(count);
+                    cachePageContentTokenCount(window.location.href, count);
+                  })
+                  .catch((e) => logger.error('Failed to count tokens', e));
+              } else {
+                setPageContentTokenCount(null);
+              }
             }
           } catch (e) {
             logger.error('Failed to extract page content', e);
@@ -445,7 +506,9 @@ export function useContentApp({
 
       pageHrefRef.current = href;
       setPageContent(fresh);
-      if (cached && cached.tokenCount !== null) {
+      if (!generalSettings.enableTokenUsageView) {
+        setPageContentTokenCount(null);
+      } else if (cached && cached.tokenCount !== null) {
         setPageContentTokenCount(cached.tokenCount);
       } else {
         setPageContentTokenCount(null);
@@ -461,14 +524,6 @@ export function useContentApp({
     },
     [],
   );
-
-  // External triggers are routed through the extension message listener in
-  // ContentEntrance rather than a page-visible DOM event. useCallback keeps
-  // the reference stable so ContentAppFrame's trigger effect fires once per
-  // request instead of on every render (which caused an abort/restart loop).
-  const beginSummary = useCallback(() => {
-    setAutoSummarizePending(true);
-  }, []);
 
   // Picking another model out of the current config's pool writes through to
   // that config row, so the choice survives a reload and shows up in the
@@ -570,17 +625,60 @@ export function useContentApp({
 
     let textContent = pageContent.textContent;
 
-    const tokenLimit = currentModel
-      ? getEffectiveInputTokenLimit(currentModel)
-      : 0;
-    if (tokenLimit > 0) {
+    const currentSelection = getCurrentPageSelection();
+    const templateVariables: PromptTemplateVariables = {
+      articleUrl: pageContent.articleUrl,
+      summaryLanguage: SUMMARY_LANGUAGE_NAME,
+      currentSelection,
+    };
+
+    // Set when even an empty page text would not fit the model's window, in
+    // which case no amount of truncation can make the request valid.
+    let budgetExhausted = false;
+
+    if (currentModel) {
       markTiming('总结：截断 RPC 开始');
       try {
-        textContent = await truncateByTokens(
-          textContent,
-          tokenLimit,
-          settings.summaryInputExceedBehaviour,
+        // The page text is not the only thing in the request: the system
+        // message, the template's own instructions, the selection and the
+        // model's answer all share the same input window. Truncating the page
+        // text to the raw limit (the previous behaviour) ignored every one of
+        // them, so a page anywhere near the limit still overflowed the context
+        // once the prompt was rendered. Measure that overhead first and give
+        // the page text only what is actually left for it.
+        const promptOverheadTokens = await measurePromptOverheadTokens(
+          prompt,
+          templateVariables,
         );
+        const budget = computeSummaryInputBudgetForModel(
+          currentModel,
+          promptOverheadTokens,
+        );
+        const pageTextBudget = budget.pageTextBudget;
+
+        if (pageTextBudget === 0) {
+          budgetExhausted = true;
+        } else if (pageTextBudget !== null) {
+          if (settings.summaryInputExceedBehaviour === 'nothing') {
+            // The user opted out of truncation, so warn about the overflow
+            // instead of silently sending a request the provider will reject.
+            const pageTextTokens = await countInputTokens(textContent);
+            if (
+              promptOverheadTokens +
+                pageTextTokens +
+                budget.reservedCompletionTokens >
+              budget.inputTokenLimit
+            ) {
+              toast.warning(messagesI18n.content.summaryInputMayExceedLimit);
+            }
+          } else {
+            textContent = await truncateByTokens(
+              textContent,
+              pageTextBudget,
+              settings.summaryInputExceedBehaviour,
+            );
+          }
+        }
       } catch (e) {
         // Truncation only keeps us under the context limit; if the background
         // worker is unreachable, send the full text and let the provider
@@ -590,11 +688,16 @@ export function useContentApp({
       markTiming('总结：截断 RPC 完成');
     }
 
+    if (budgetExhausted) {
+      // The prompt template and the completion reserve already fill the model's
+      // window, so sending anything would be a guaranteed context overflow.
+      toast.error(messagesI18n.content.summaryInputBudgetExhausted);
+      return;
+    }
+
     const view = {
       textContent,
-      articleUrl: pageContent.articleUrl,
-      summaryLanguage: SUMMARY_LANGUAGE_NAME,
-      currentSelection: getCurrentPageSelection(),
+      ...templateVariables,
     };
 
     setMessages([

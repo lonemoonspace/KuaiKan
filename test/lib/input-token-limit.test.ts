@@ -13,10 +13,17 @@ function model(providerId: ModelProviderId, maxInputTokens: number) {
 }
 
 describe('getEffectiveInputTokenLimit', () => {
-  it('uses the full limit for OpenAI-like providers', () => {
+  it('uses the full limit for the providers that share the bundled tokenizer', () => {
     expect(getEffectiveInputTokenLimit(model('openai', 1000))).toBe(1000);
-    expect(getEffectiveInputTokenLimit(model('openai-compatible', 1000))).toBe(1000);
     expect(getEffectiveInputTokenLimit(model('open-responses', 1000))).toBe(1000);
+  });
+
+  // `openai-compatible` is a protocol, not a tokenizer: the bucket holds
+  // OpenRouter, llama.cpp, LM Studio and Ollama-through-the-compatible-client,
+  // none of which tokenize like the bundled gpt-5 vocabulary. It used to get
+  // zero headroom — the exact opposite of what those providers need.
+  it('leaves 10% headroom for openai-compatible endpoints', () => {
+    expect(getEffectiveInputTokenLimit(model('openai-compatible', 1000))).toBe(900);
   });
 
   it('leaves 10% headroom for other providers', () => {

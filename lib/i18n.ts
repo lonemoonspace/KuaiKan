@@ -5,6 +5,7 @@
 const UI_MESSAGES = {
   common: {
     back: '返回',
+    close: '关闭',
     loadingSettings: '正在加载设置...',
     off: '关闭',
     on: '开启',
@@ -22,7 +23,6 @@ const UI_MESSAGES = {
     },
   },
   content: {
-    badgeLabel: '网页总结',
     summary: '总结',
     reSummarize: '重新总结',
     untitledPage: '未命名页面',
@@ -31,6 +31,9 @@ const UI_MESSAGES = {
     noPageContent: '页面内容尚未就绪，请稍后重试。',
     stopTimedOut: '上一次总结仍未停下，请稍后重试。',
     settingsUnavailable: '设置读取失败，请刷新页面后重试。',
+    summaryInputMayExceedLimit: '页面正文预计超出模型的输入上限，请求可能被拒绝；可在通用设置中改为裁剪。',
+    summaryInputBudgetExhausted: '提示词模板与输出预留已占满模型的输入上限，无法发送页面正文。',
+    retrySummary: '重试',
 
     tokenViewerInfoTip: '此界面仅用于可视化分词效果。在此处的拖动调节不会改变实际发送给大语言模型的文本内容。',
     calculating: '计算中...',
@@ -43,7 +46,11 @@ const UI_MESSAGES = {
     totalLabel: '总计：',
     viewChangeHint: '点击右侧的眼睛按钮查看/更改',
     tokenPreview: 'Token 预览',
-    hideFloatingBall: '隐藏悬浮球',
+    tokenPreviewWindowed: '内容过长，仅预览开头的 Token（统计与截断仍按全文计算）。',
+    loadingTokens: '正在加载 Token…',
+    tokensLabel: 'Token 数：',
+    maxInputLimitLabel: '输入上限',
+    tokenIdLabel: (id: number) => `Token ID：${id}`,
     citationNotFound: '没有在页面中找到这段原文，可能被改写过或内容尚未加载。',
     summarizeThisPage: '总结此页',
     stop: '停止',
@@ -56,6 +63,36 @@ const UI_MESSAGES = {
     restoreDefaults: '恢复默认值',
     saveFailed: '通用设置保存失败。',
     savedToast: '通用设置已保存。',
+    groups: {
+      advanced: '高级',
+      appearance: '界面与显示',
+      defaults: '默认模型与提示词',
+      pageContent: '页面内容',
+      triggers: '总结触发',
+    },
+    logLevel: {
+      description: '排查问题时把级别调低。',
+      label: '日志级别',
+    },
+    defaultModelDescription: '新开的总结面板默认使用。',
+    overflowRowLabel: '超长内容',
+    overflow: {
+      back: { description: '保留正文结尾部分。', label: '保留结尾' },
+      front: { description: '保留正文开头（默认）。', label: '保留开头' },
+      middle: { description: '保留开头与结尾，中间用占位符标记。', label: '保留首尾' },
+      nothing: { description: '原样发送全部内容（可能超出模型上限）。', label: '不裁剪' },
+    },
+    panelFontSize: {
+      description: '页面内面板里总结正文的大小，已打开的面板立即生效。',
+      label: '面板字号',
+      options: { large: '大', medium: '中', small: '小' },
+    },
+    restoreDefaultsConfirm: '把所有通用设置恢复为默认值？',
+    theme: {
+      description: '设置页与页面内面板共用。',
+      label: '主题',
+      options: { dark: '深色', light: '浅色', system: '跟随系统' },
+    },
     settings: {
       enableAutoBeginSummary: {
         description: '',
@@ -68,10 +105,6 @@ const UI_MESSAGES = {
       enableContextMenuSummarizeThisPage: {
         description: '显示总结当前页面的菜单项。',
         label: '总结当前页面',
-      },
-      enableFloatingBall: {
-        description: '在右下角显示用于打开总结面板的悬浮按钮。',
-        label: '悬浮按钮',
       },
       enableSummaryWindowDefault: {
         caution: '这会改变每个匹配页面的默认行为。',
@@ -86,7 +119,6 @@ const UI_MESSAGES = {
       | 'enableAutoBeginSummary'
       | 'enableAutoBeginSummaryByActionOrContextTrigger'
       | 'enableContextMenuSummarizeThisPage'
-      | 'enableFloatingBall'
       | 'enableSummaryWindowDefault'
       | 'enableTokenUsageView',
       { caution?: string; description: string; label: string }
@@ -120,6 +152,10 @@ const UI_MESSAGES = {
     baseUrl: '基础 URL',
     apiMode: 'API 模式',
     maxInputTokens: '最大输入 Token',
+    noInputTokenLimit: '无上限',
+    loadFailed: '模型设置加载失败。',
+    selectModel: '选择模型',
+    selectModelIcon: '选择模型图标',
     price: '价格',
     useDefault: (name: string) => `将 ${name} 设为默认`,
     moveUp: (name: string) => `上移 ${name}`,
@@ -135,7 +171,7 @@ const UI_MESSAGES = {
     duplicateFailed: '模型复制失败。',
     defaultChangedFailed: '默认模型切换失败。',
     exportIncludeSecretsConfirm:
-      '导出的文件默认不包含 API Key 与自定义 Headers。\n\n只在确定文件会安全存放时才选择“确定”以包含凭据。',
+      '导出的文件默认不包含 API Key、自定义 Headers 与 extraBody。\n\n只在确定文件会安全存放时才选择“确定”以包含凭据。',
     exportedToast: (count: number) => `已导出 ${count} 个模型配置（不含 API Key）。`,
     exportedWithSecretsToast: (count: number) => `已导出 ${count} 个模型配置（含 API Key）。`,
     exportFailed: '导出失败。',
@@ -143,6 +179,7 @@ const UI_MESSAGES = {
     importedPartialToast: (count: number, rejected: number) =>
       `已导入 ${count} 个模型配置，${rejected} 个无法识别已被跳过。`,
     importFailed: '导入失败。',
+    importFileTooLarge: '文件过大，无法导入（最多 8 MB）。',
   },
   pageExtraction: {
     method: {
@@ -194,6 +231,7 @@ const UI_MESSAGES = {
     templateVariablesDescription: '组装总结请求时会渲染这些占位符。',
     userMessage: 'User 消息',
     userMessageDescription: '包裹页面输入并补充任务上下文。',
+    viewPromptContent: '查看提示词内容',
     variableDescriptions: {
       articleUrl: '当前总结页面的 URL。',
       currentSelection: '页面中当前存在的选中文本。',
@@ -208,7 +246,6 @@ const UI_MESSAGES = {
     editPrompt: '编辑提示词',
     models: '模型',
     prompts: '提示词',
-    welcome: '欢迎',
   },
   popup: {
     provider: '配置',

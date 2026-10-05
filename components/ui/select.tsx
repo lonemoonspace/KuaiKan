@@ -67,9 +67,12 @@ SelectScrollDownButton.displayName =
 
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content> & { portal?: boolean }
->(({ className, children, position = "popper", portal = false, ...props }, ref) => {
-  const content = (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
+>(({ className, children, position = "popper", ...props }, ref) => {
+  // No `portal` escape hatch: every consumer renders inside a plain document
+  // (options/popup), where Radix's default (no portal) positions correctly.
+  // The unused flag was dead config and only invited mangled positioning.
+  return (
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
@@ -94,12 +97,6 @@ const SelectContent = React.forwardRef<
       <SelectScrollDownButton />
     </SelectPrimitive.Content>
   );
-
-  if (portal) {
-    return <SelectPrimitive.Portal>{content}</SelectPrimitive.Portal>;
-  }
-  
-  return content;
 })
 SelectContent.displayName = SelectPrimitive.Content.displayName
 

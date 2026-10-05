@@ -23,6 +23,9 @@
 const HIGHLIGHT_NAME = 'kuai-cite-target';
 const HIGHLIGHT_STYLE_ID = 'kuai-cite-target-style';
 const HIGHLIGHT_DURATION_MS = 4000;
+// Injected into the *page's* document/shadow root, where the extension's theme
+// variables do not exist, so this one colour has to be literal.
+const HIGHLIGHT_STYLE_RULE = `::highlight(${HIGHLIGHT_NAME}){background-color:rgba(255,200,0,.55);color:inherit;}`;
 const EXTENSION_HOST_TAG = 'webpage-summary-entrance';
 const SKIPPED_TAGS = new Set([
   'SCRIPT',
@@ -42,6 +45,10 @@ const MIN_FRAGMENT_LENGTH_LATIN = 16;
 // ...and it must still cover a reasonable share of the quote.
 const MIN_FRAGMENT_RATIO = 0.35;
 const CJK_PATTERN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+// Hoisted: a regex literal inside the per-character loop below allocates a new
+// RegExp for every character of every text node on the page.
+const LETTER_OR_DIGIT_PATTERN = /[\p{L}\p{N}]/u;
+const ASCII_LETTER_OR_DIGIT_PATTERN = /[a-z0-9]/;
 // A fragment that recurs dozens of times across a page (e.g. a nav item) is
 // not a meaningful citation target; cap collection so a pathological page
 // can't make matching scan unboundedly.
@@ -60,9 +67,21 @@ export function normalizeForMatch(source: string): NormalizedText {
   const map: number[] = [];
   let index = 0;
   for (const char of source) {
+    // Fast path: ASCII needs no NFKC pass, only case folding. This is the
+    // overwhelming majority of characters on Latin pages, and `normalize` is
+    // far more expensive than a character-range test.
+    if (char.length === 1 && char.charCodeAt(0) < 128) {
+      const lower = char.toLowerCase();
+      if (ASCII_LETTER_OR_DIGIT_PATTERN.test(lower)) {
+        text += lower;
+        map.push(index);
+      }
+      index += 1;
+      continue;
+    }
     const folded = char.normalize('NFKC').toLowerCase();
     for (const out of folded) {
-      if (/[\p{L}\p{N}]/u.test(out)) {
+      if (LETTER_OR_DIGIT_PATTERN.test(out)) {
         text += out;
         map.push(index);
       }
@@ -247,6 +266,24 @@ function isRangeVisible(range: Range): boolean {
   const element = range.startContainer.parentElement;
   if (!element) return false;
   if (range.getClientRects().length === 0) return false;
+  // `checkVisibility` walks the ancestor chain, so an ancestor with
+  // `opacity: 0` is rejected too -- computed opacity is not inherited, so
+  // reading only this element's style used to let those matches through.
+  const checkVisibility = (
+    element as Element & {
+      checkVisibility?: (options?: {
+        checkOpacity?: boolean;
+        checkVisibilityCSS?: boolean;
+      }) => boolean;
+    }
+  ).checkVisibility;
+  if (typeof checkVisibility === 'function') {
+    try {
+      return checkVisibility.call(element, { checkOpacity: true, checkVisibilityCSS: true });
+    } catch {
+      // Fall through to the style probe below.
+    }
+  }
   const view = element.ownerDocument.defaultView;
   const style = view?.getComputedStyle(element);
   return !style || (style.visibility !== 'hidden' && style.opacity !== '0');
@@ -267,17 +304,30 @@ function revealRange(range: Range) {
 
 let clearHighlightTimer: ReturnType<typeof setTimeout> | null = null;
 let clearHighlight: (() => void) | null = null;
+// Every style element this module injected for the *current* highlight, so the
+// rules can be removed again when it ends. Leaving them in the page (as the
+// first version did) permanently modified a document we do not own.
+let injectedHighlightStyles: HTMLElement[] = [];
 
 function ensureHighlightStyle(root: Document | ShadowRoot) {
   const isDocument = root.nodeType === Node.DOCUMENT_NODE;
   const doc = isDocument ? (root as Document) : root.ownerDocument;
   if (!doc) return;
   const container = isDocument ? doc.head ?? doc.documentElement : root;
-  if (!container || container.querySelector(`#${HIGHLIGHT_STYLE_ID}`)) return;
-  const style = doc.createElement('style');
-  style.id = HIGHLIGHT_STYLE_ID;
-  style.textContent = `::highlight(${HIGHLIGHT_NAME}){background-color:rgba(255,200,0,.55);color:inherit;}`;
-  container.appendChild(style);
+  if (!container) return;
+  let style = container.querySelector<HTMLElement>(`#${HIGHLIGHT_STYLE_ID}`);
+  if (!style) {
+    style = doc.createElement('style');
+    style.id = HIGHLIGHT_STYLE_ID;
+    style.textContent = HIGHLIGHT_STYLE_RULE;
+    container.appendChild(style);
+  }
+  if (!injectedHighlightStyles.includes(style)) injectedHighlightStyles.push(style);
+}
+
+function removeHighlightStyles() {
+  for (const style of injectedHighlightStyles) style.remove();
+  injectedHighlightStyles = [];
 }
 
 function highlightRange(range: Range) {
@@ -298,6 +348,7 @@ function highlightRange(range: Range) {
     registry.set(HIGHLIGHT_NAME, new HighlightCtor(range));
     clearHighlight = () => {
       registry.delete(HIGHLIGHT_NAME);
+      removeHighlightStyles();
       clearHighlight = null;
     };
     clearHighlightTimer = setTimeout(() => {
@@ -330,15 +381,19 @@ export function scrollToPhrase(phrase: string): boolean {
 
   // A cached index can go stale without the MutationObserver noticing: DOM
   // changes inside a shadow root or a same-origin iframe are not observed
-  // from `document.body`. If the top match's node has since been detached,
-  // rebuild once and re-match instead of scrolling to a dead node.
-  if (matches.length) {
-    const { node } = locate(index, matches[0].start, 'start');
-    if (!node.isConnected) {
-      invalidatePageIndex();
-      index = getPageIndex();
-      matches = findFuzzyMatches(index.text, needle);
-    }
+  // from `document.body`. Rebuild once and re-match when the cached text is
+  // unusable — either the top match points at a node that has since been
+  // detached, or the stale text yields no match at all (an article mounted
+  // after the index was built, which the observer never saw). Without the
+  // second case the user is told "没有在页面中找到这段原文" for text that is
+  // visibly on the page.
+  const topMatchDetached =
+    matches.length > 0 && !locate(index, matches[0].start, 'start').node.isConnected;
+
+  if (!matches.length || topMatchDetached) {
+    invalidatePageIndex();
+    index = getPageIndex();
+    matches = findFuzzyMatches(index.text, needle);
   }
 
   let fallback: Range | null = null;
