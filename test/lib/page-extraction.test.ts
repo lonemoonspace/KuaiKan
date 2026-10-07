@@ -165,6 +165,51 @@ describe('domHeuristicParseRead', () => {
   it('reports nothing for a page without text', () => {
     expect(domHeuristicParseRead(createPageDocument('<div id="app"></div>'))).toBeUndefined();
   });
+
+  // jsdom has no `checkVisibility`. Chrome's answers "is there a rendered
+  // box", which is false for `display: contents` and for every element of a
+  // document without a browsing context (the flattened clone).
+  describe('with a Chrome-like checkVisibility', () => {
+    function stubCheckVisibility(document: Document) {
+      const view = document.defaultView!;
+      const proto = view.Element.prototype as Element & {
+        checkVisibility?: () => boolean;
+      };
+      proto.checkVisibility = function checkVisibility(this: Element) {
+        const ownView = this.ownerDocument.defaultView;
+        if (!ownView) return false;
+        for (let node: Element | null = this; node; node = node.parentElement) {
+          if (ownView.getComputedStyle(node).display === 'none') return false;
+        }
+        return ownView.getComputedStyle(this).display !== 'contents';
+      };
+    }
+
+    it('keeps an article wrapped in a display: contents element', () => {
+      const document = createPageDocument(`
+        <article><h1>标题</h1><div style="display: contents">${articleHtml('包裹正文')}</div>
+          <div style="display: none">隐藏的推荐位文案</div>
+        </article>
+      `);
+      stubCheckVisibility(document);
+
+      const content = domHeuristicParseRead(document);
+
+      expect(content?.textContent).toContain('包裹正文 段落 0');
+      expect(content?.textContent).not.toContain('隐藏的推荐位文案');
+    });
+
+    it('still reads a document that has no browsing context', () => {
+      const document = createPageDocument(`<article><h1>标题</h1>${articleHtml('克隆正文')}</article>`);
+      stubCheckVisibility(document);
+      const detached = document.cloneNode(true) as Document;
+      expect(detached.defaultView).toBeNull();
+
+      const content = domHeuristicParseRead(detached);
+
+      expect(content?.textContent).toContain('克隆正文 段落 0');
+    });
+  });
 });
 
 describe('parsePageContent', () => {

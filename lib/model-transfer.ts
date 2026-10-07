@@ -158,10 +158,11 @@ export function parseModelExportFile(raw: unknown): ParsedModelExport {
  * Merge an imported model list into the local one.
  *
  * The import wins field by field, with one exception: a row that carries no
- * `apiKey` / `headers` inherits the local ones, but only when it still points at
- * the same endpoint (`providerId` and, normalized, `baseURL`). That keeps a
- * credentials-free export from wiping every key on import, without ever handing
- * a local key to a different endpoint.
+ * `apiKey` / `headers` / `extraBody` inherits the local ones, but only when it
+ * still points at the same endpoint (`providerId` and, normalized, `baseURL`).
+ * That keeps a credentials-free export (which blanks all three, see
+ * `buildModelExportFile`) from wiping every key and request parameter on
+ * import, without ever handing local values to a different endpoint.
  */
 export function mergeImportedModels(
   current: ModelConfigItem[],
@@ -187,6 +188,10 @@ export function mergeImportedModels(
         imported.headers && Object.keys(imported.headers).length > 0
           ? imported.headers
           : local.headers,
+      extraBody:
+        imported.extraBody && Object.keys(imported.extraBody).length > 0
+          ? imported.extraBody
+          : local.extraBody,
       modelIds:
         imported.modelIds && imported.modelIds.length > 0
           ? imported.modelIds

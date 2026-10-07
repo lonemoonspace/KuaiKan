@@ -14,7 +14,12 @@ import { loadGeneralSettings } from '@/lib/general-settings-storage';
 import { parsePageContent, type WebpageContent } from '@/lib/page-extraction';
 import { getCurrentPageSelection } from '@/lib/page-selection';
 import { countInputTokens, truncateByTokens } from '@/lib/token-count';
-import { computeSummaryInputBudgetForModel } from '@/lib/summary-input-budget';
+import {
+  computeSummaryInputBudget,
+  computeSummaryInputBudgetForModel,
+} from '@/lib/summary-input-budget';
+import { getEffectiveInputTokenLimit } from '@/lib/input-token-limit';
+import useWxtStorage from '@/hooks/useWxtStorage';
 import {
   cachePageContent,
   cachePageContentTokenCount,
@@ -36,7 +41,10 @@ import {
   SUMMARY_LANGUAGE_NAME,
   type PromptConfigItem,
 } from '@/constants/prompt-settings';
-import type { GeneralSettings } from '@/constants/general-settings';
+import {
+  GENERAL_SETTING_DEFINITIONS,
+  type GeneralSettings,
+} from '@/constants/general-settings';
 import { getUiMessages } from '@/lib/i18n';
 import { sendMessage as sendExtMessage } from '@/lib/messaging';
 
@@ -106,6 +114,17 @@ export function useContentApp({
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
   const [pageContent, setPageContent] = useState<WebpageContent | null>(null);
   const [pageContentTokenCount, setPageContentTokenCount] = useState<number | null>(null);
+  // Read live rather than from the `settings` snapshot taken at init: the
+  // status bar follows this switch as soon as it is flipped on the options
+  // page, so the counting has to follow it too, or the footer would sit on
+  // "calculating..." until the panel is reopened.
+  const [tokenUsageViewEnabled, , tokenUsageViewLoaded] = useWxtStorage<boolean>(
+    GENERAL_SETTING_DEFINITIONS.enableTokenUsageView.storageKey,
+    GENERAL_SETTING_DEFINITIONS.enableTokenUsageView.defaultValue as boolean,
+  );
+  // Tokens the rendered prompt templates use besides the page text; `null`
+  // until measured. Only the token-usage view needs it outside a summary.
+  const [promptOverheadTokens, setPromptOverheadTokens] = useState<number | null>(null);
   const [autoSummarizePending, setAutoSummarizePending] = useState(false);
   // State (not a ref) so the auto-summarize effect actually re-runs once
   // initialization settles — a ref flip would not schedule a render.
@@ -348,23 +367,8 @@ export function useContentApp({
           markTiming('面板：命中正文缓存（含 innerText 校验）');
           pageHrefRef.current = window.location.href;
           setPageContent(cached.content);
-          if (!generalSettings.enableTokenUsageView) {
-            // Counting is not free: the background worker has to load the
-            // gpt-5 vocabulary (~2.6MB) on first use. Users who turned the
-            // token-usage UI off never see the number, so do not pay for it.
-            setPageContentTokenCount(null);
-          } else if (cached.tokenCount !== null) {
-            setPageContentTokenCount(cached.tokenCount);
-          } else {
-            countInputTokens(cached.content.textContent)
-              .then((count) => {
-                markTiming('面板：token 计数 RPC 完成');
-                if (!active) return;
-                setPageContentTokenCount(count);
-                cachePageContentTokenCount(window.location.href, count);
-              })
-              .catch((e) => logger.error('Failed to count tokens', e));
-          }
+          // A missing count is filled in by the token-count effect below.
+          setPageContentTokenCount(cached.tokenCount);
         } else {
           try {
             const extracted = parsePageContent(
@@ -378,18 +382,7 @@ export function useContentApp({
               markTiming('面板：写入正文缓存（innerText 签名）完成');
               pageHrefRef.current = window.location.href;
               setPageContent(extracted);
-              if (generalSettings.enableTokenUsageView) {
-                countInputTokens(extracted.textContent)
-                  .then((count) => {
-                    markTiming('面板：token 计数 RPC 完成');
-                    if (!active) return;
-                    setPageContentTokenCount(count);
-                    cachePageContentTokenCount(window.location.href, count);
-                  })
-                  .catch((e) => logger.error('Failed to count tokens', e));
-              } else {
-                setPageContentTokenCount(null);
-              }
+              setPageContentTokenCount(null);
             }
           } catch (e) {
             logger.error('Failed to extract page content', e);
@@ -474,6 +467,71 @@ export function useContentApp({
     };
   }, []);
 
+  // Count the page text for the token-usage view. Counting is not free: the
+  // background worker has to load the gpt-5 vocabulary (~2.6MB) on first use,
+  // so it only runs while the view is on. Every path that replaces
+  // `pageContent` resets the count (or adopts a cached one), which re-arms
+  // this effect; so does turning the view on while the panel is open.
+  useEffect(() => {
+    if (!tokenUsageViewLoaded || !tokenUsageViewEnabled) return;
+    if (!pageContent || pageContentTokenCount !== null) return;
+
+    let active = true;
+    const href = pageHrefRef.current;
+    countInputTokens(pageContent.textContent)
+      .then((count) => {
+        markTiming('面板：token 计数 RPC 完成');
+        if (!active) return;
+        setPageContentTokenCount(count);
+        if (href) cachePageContentTokenCount(href, count);
+      })
+      .catch((e) => logger.error('Failed to count tokens', e));
+
+    return () => {
+      active = false;
+    };
+  }, [tokenUsageViewLoaded, tokenUsageViewEnabled, pageContent, pageContentTokenCount]);
+
+  const inputTokenLimit = currentModel ? getEffectiveInputTokenLimit(currentModel) : 0;
+  const articleUrl = pageContent?.articleUrl ?? null;
+
+  // Measure the prompt overhead the token-usage view subtracts from the model
+  // limit, so the status bar and the token viewer show the budget `summarize`
+  // actually truncates to. The selection is left out: it is only known at the
+  // moment the summary starts.
+  useEffect(() => {
+    if (!tokenUsageViewLoaded || !tokenUsageViewEnabled) return;
+    if (!(inputTokenLimit > 0) || !currentPrompt) return;
+
+    let active = true;
+    measurePromptOverheadTokens(currentPrompt, {
+      articleUrl: articleUrl ?? window.location.href,
+      summaryLanguage: SUMMARY_LANGUAGE_NAME,
+      currentSelection: '',
+    })
+      .then((tokens) => {
+        if (active) setPromptOverheadTokens(tokens);
+      })
+      .catch((e) => logger.warn('[useContentApp] Failed to measure prompt overhead', e));
+
+    return () => {
+      active = false;
+    };
+  }, [tokenUsageViewLoaded, tokenUsageViewEnabled, inputTokenLimit, currentPrompt, articleUrl]);
+
+  // What the page text may use of the input window (0 = no limit). Until the
+  // overhead is measured this is the raw model limit.
+  const pageTextTokenLimit = useMemo(() => {
+    if (!(inputTokenLimit > 0)) return 0;
+    if (promptOverheadTokens === null) return inputTokenLimit;
+    const { pageTextBudget } = computeSummaryInputBudget({
+      inputTokenLimit,
+      promptOverheadTokens,
+    });
+    // Nothing fits at all is still a limit, not "unlimited".
+    return Math.max(1, pageTextBudget ?? 0);
+  }, [inputTokenLimit, promptOverheadTokens]);
+
   // Re-extract the body when the page navigated (SPA route change) or its
   // text changed since the last extraction — after a route change the panel
   // remounts and may have extracted before the new route finished rendering.
@@ -506,20 +564,7 @@ export function useContentApp({
 
       pageHrefRef.current = href;
       setPageContent(fresh);
-      if (!generalSettings.enableTokenUsageView) {
-        setPageContentTokenCount(null);
-      } else if (cached && cached.tokenCount !== null) {
-        setPageContentTokenCount(cached.tokenCount);
-      } else {
-        setPageContentTokenCount(null);
-        countInputTokens(fresh.textContent)
-          .then((count) => {
-            if (pageHrefRef.current !== href) return;
-            setPageContentTokenCount(count);
-            cachePageContentTokenCount(href, count);
-          })
-          .catch((e) => logger.error('Failed to count tokens', e));
-      }
+      setPageContentTokenCount(cached?.tokenCount ?? null);
       return fresh;
     },
     [],
@@ -636,7 +681,9 @@ export function useContentApp({
     // which case no amount of truncation can make the request valid.
     let budgetExhausted = false;
 
-    if (currentModel) {
+    // Without a configured limit there is nothing to truncate to, and
+    // measuring the prompt would load the tokenizer for a discarded result.
+    if (currentModel && getEffectiveInputTokenLimit(currentModel) > 0) {
       markTiming('总结：截断 RPC 开始');
       try {
         // The page text is not the only thing in the request: the system
@@ -816,6 +863,9 @@ export function useContentApp({
     // page content
     pageContent,
     pageContentTokenCount,
+    // token-usage view
+    tokenUsageViewEnabled,
+    pageTextTokenLimit,
     // handlers
     handleSummarize,
     beginSummary,

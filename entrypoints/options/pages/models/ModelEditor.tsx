@@ -838,6 +838,11 @@ function ModelPickerModal({
 }) {
   const messages = getUiMessages();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // `onClose` is an inline arrow at the call site; reading it through a ref
+  // keeps the focus effect from re-running (and re-grabbing focus) on every
+  // parent render.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   // Focus the dialog on mount and close it on Escape: without this the only
   // ways out were the close button and picking a model, and Escape went to the
@@ -851,7 +856,7 @@ function ModelPickerModal({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -864,7 +869,7 @@ function ModelPickerModal({
 
     node.addEventListener('keydown', handleKeyDown);
     return () => node.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, []);
 
   return (
     <div

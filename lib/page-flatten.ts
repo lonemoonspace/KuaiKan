@@ -29,6 +29,14 @@ export const FLATTEN_CONTAINER_LIMIT = 200;
 /** Marks the wrapper elements this module inserts (debugging aid). */
 export const FLATTENED_CONTAINER_ATTRIBUTE = 'data-kuai-flattened';
 
+/**
+ * The panel's own host (`entrypoints/content/scope.tsx`). WXT attaches an
+ * *open* shadow root to it, so without this skip every flattened retry pulled
+ * the panel's buttons and the restored summary in as "page content" — and since
+ * that text is never empty, it beat the honest "没有内容" result.
+ */
+const EXTENSION_HOST_TAG = 'WEBPAGE-SUMMARY-ENTRANCE';
+
 export function needsFlattenedRetry(text: string | null | undefined): boolean {
   return (text ?? '').trim().length < MIN_EXTRACTED_TEXT_LENGTH;
 }
@@ -91,7 +99,7 @@ function inlineSubtrees(
 
     const liveElement = liveElements[index];
     const cloneElement = cloneElements[index];
-    if (!cloneElement) {
+    if (!cloneElement || liveElement.tagName === EXTENSION_HOST_TAG) {
       continue;
     }
 

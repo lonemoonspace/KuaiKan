@@ -62,6 +62,8 @@ export function isTokenKept(
     // The background pays for the "content truncated" marker out of the same
     // budget before splitting it, so the kept head/tail are that much narrower.
     const budget = Math.max(0, keep - middleMarkerTokens);
+    // No room for the marker: the background keeps the head, like `front`.
+    if (budget === 0) return index < keep;
     const headTokens = Math.floor(budget / 2);
     const tailTokens = budget - headTokens;
     return index < headTokens || index >= total - tailTokens;
@@ -78,6 +80,11 @@ export function TokenViewerModal({ isOpen, onClose, textContent, maxInputTokens,
   const [middleMarkerTokens, setMiddleMarkerTokens] = useState(0);
   const [loading, setLoading] = useState(false);
   const [sliderValue, setSliderValue] = useState(maxInputTokens);
+  // Callers pass `onClose` as an inline arrow, i.e. a new function on every
+  // render. Depending on it re-ran the focus effect below on every parent
+  // render (each streamed chunk), yanking focus off the slider mid-adjustment.
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
 
   // Move focus into the viewer when it opens and close it on Escape. The
   // viewer covers the panel but key events go to whatever has focus, so
@@ -94,7 +101,7 @@ export function TokenViewerModal({ isOpen, onClose, textContent, maxInputTokens,
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -108,7 +115,7 @@ export function TokenViewerModal({ isOpen, onClose, textContent, maxInputTokens,
 
     node.addEventListener('keydown', handleKeyDown);
     return () => node.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
