@@ -1,8 +1,26 @@
 {
   "name": "kuai-kan",
   "description": "KuaiKan: AI webpage summary with your own LLM API, customized prompts, lightweight, no subscription, privacy friendly",
-  "private": true,
   "version": "3.1.4",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lonemoonspace/KuaiKan.git"
+  },
+  "homepage": "https://github.com/lonemoonspace/KuaiKan",
+  "bugs": "https://github.com/lonemoonspace/KuaiKan/issues",
+  "keywords": [
+    "browser-extension",
+    "chrome-extension",
+    "webpage-summary",
+    "llm",
+    "ai",
+    "openai",
+    "anthropic",
+    "ollama",
+    "wxt",
+    "react"
+  ],
   "type": "module",
   "scripts": {
     "dev": "wxt",

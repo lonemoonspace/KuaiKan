@@ -14,7 +14,7 @@
 10. fix: 「中间截断」预算小于截断标记时保留开头（同 `front`），不再返回空串导致发出不含正文的请求；Token 查看器的保留区判断同步调整
 
 ## [3.1.3]
-本版是又一轮完整的代码审查修复（报告见 `CODE_REVIEW_v3.1.2.md`，基线 `5bf6408`），并**按用户要求移除悬浮球功能**。审查共列出 3 项严重、19 项中危、45+ 项低危与 7 项疑似问题，A/B 级与悬浮球全部处理，C 级按主题批量清理，测试从 184 例增至 279 例。
+本版是又一轮完整的代码审查修复（内部审查，基线 `5bf6408`），并**按用户要求移除悬浮球功能**。审查共列出 3 项严重、19 项中危、45+ 项低危与 7 项疑似问题，A/B 级与悬浮球全部处理，C 级按主题批量清理，测试从 184 例增至 279 例。
 
 1. change: **移除悬浮球功能**（用户确认 D1 真实存在后决定整体删除，而非修 `setPointerCapture` 逻辑）。`components/container/RightFloatingBallContainer.tsx` 删除，`enableFloatingBall` 设置项、设置页开关、`lib/i18n.ts` 的 `badgeLabel`/`hideFloatingBall`/`enableFloatingBall` 文案及 `AGENTS.md`/`README.md` 相关描述一并清理；遗留的两个存储键由迁移清理（见第 22 条）。页面内浮动面板不受影响
 2. fix: 输入预算不再只看模型上限。此前只按 `getEffectiveInputTokenLimit()` 裁剪正文，忽略了渲染后的提示词与输出预留，正文顶到上限时仍会 `context_length_exceeded`；现在先实测提示词开销，再按「上限 − 输出预留(1024) − 提示词开销 − 32」裁剪，模板本身就超限时提前报错并说明原因，超限策略为「不处理」时给出警告而不是静默发送（新增 `lib/summary-input-budget.ts` 与预算不变量单测）
@@ -41,11 +41,11 @@
 23. change(cleanup): 删除死代码——`MessageActions`/`MessageBranch*`/`MessageToolbar`、`seedDefaultPromptIfNeeded`、无入口的 `WelcomePage`/`RoutePlaceholder` 占位页；`LOG_LEVELS` 去重为单一来源并改用 `Object.hasOwn`（此前 `'constructor' in LOG_LEVELS` 会让 `LOG_LEVELS[level]` 变成函数、所有日志被静默关闭）；`timing-bg` 的 `serviceWorkerStartedAt` 按 DEV 门控；bridge 拒绝不可信 port 时直接断开
 24. change(build): `options` 不再跨入口 import popup 的样式表（新增 `assets/page.css`，两者共用）；`.gitignore` 补 `.env*`（WXT 会读取 `.env` 并把 `WXT_*` 内联进产物）；CI 新增三处版本号一致性校验
 25. test: 用例从 184 增至 279（23 个文件）。新增后台 bridge 桥接层（11 例）、`focus-trap`（8 例）、`isTokenKept`（6 例）、`GithubIcon` 渲染（3 例）以及 `summary-input-budget` 不变量、`page-flatten`、`page-extraction` 的 DOM/iframe/影子根用例；引入 jsdom 作为逐文件测试环境（`// @vitest-environment jsdom`，未改动全局 `environment`）；`wxt-browser` 测试替身支持 `runtime.onConnect` 与端口 `sender`
-26. doc: `CODE_REVIEW_v3.1.2.md` 补第 8 节「修复状态」，逐条记录 A/B/C/D 级落点、审查结论更正（B11 的 sonner 一半被实证推翻：sonner 就地渲染、CSS 早已注入影子根；`restoreDefaults` 不覆盖主题；客户端「无超时」只有部分成立）以及「复查后有意不改」的理由
+26. doc: 内部审查报告补「修复状态」一节，逐条记录 A/B/C/D 级落点、审查结论更正（B11 的 sonner 一半被实证推翻：sonner 就地渲染、CSS 早已注入影子根；`restoreDefaults` 不覆盖主题；客户端「无超时」只有部分成立）以及「复查后有意不改」的理由
 27. 说明: 本次改动在本机只做了类型检查、Lint、全量单测与构建验证；面板拖拽、主题、shadow DOM/iframe 提取这些表现性改动需要你在真实浏览器里过一眼
 
 ## [3.1.2]
-本版是一次完整的代码审查修复（报告见 `CODE_REVIEW_v3.1.1.md`），含一处已复现的注入缺陷与两处会丢用户数据的问题。
+本版是一次完整的代码审查修复（内部审查报告），含一处已复现的注入缺陷与两处会丢用户数据的问题。
 
 1. fix(security): 模型输出里的图片 alt 文本未转义即可进入 `dangerouslySetInnerHTML`，`![<img src=x onerror=…>](javascript:…)` 能注入任意 HTML/JS（已用 marked 18 复现）。现将该分支改为转义输出，并**不再渲染模型输出中的任何图片**——图片本身没有信息增量，却会让被总结的页面驱动一次真实外发请求（相对路径还会命中被访站点）
 2. fix(security): 面板不再读取整行模型配置，只接收展示所需字段的投影，`apiKey` / `headers` / `extraBody` 不再进入页面上下文；图标统一经 `runtime.getURL` 解析

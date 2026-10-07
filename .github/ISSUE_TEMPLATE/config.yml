@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 安全问题（请勿公开讨论）
+    url: https://github.com/lonemoonspace/KuaiKan/security/advisories/new
+    about: API Key 泄露、注入风险等安全问题请走私密 Advisory，见 SECURITY.md。

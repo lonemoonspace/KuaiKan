@@ -9,8 +9,8 @@
 
 ## 构建与发布
 
-本项目纯自用，不上架 Chrome Web Store。「发布」指在本地归档一份可回滚的 zip，随后提交、
-打 tag 并推送到 GitHub，发一个 GitHub Release 存档（不涉及应用商店审核）。
+本项目为开源自用项目，不上架 Chrome Web Store。「发布」指构建一份 zip、提交、打 tag、
+推送到 GitHub，并发一个 GitHub Release 存档（不涉及应用商店审核）。
 
 日常开发只需：
 
@@ -26,23 +26,15 @@
 3. 跑完整闸门：`npm run compile` && `npm run test` && `npm run lint`
 4. 清掉 `.output` 下的旧 zip（`rm -f .output/*-chrome.zip`），避免旧包被误拷进新版本目录
 5. `npm run zip`，产出 `.output/kuai-kan-<version>-chrome.zip`
-6. 归档：`mkdir -p release/<version>` 并把 zip 拷进去
-7. 校验：解开 zip 确认里面 `manifest.json` 的 `version` 与目标版本一致；**再确认
+6. 校验：解开 zip 确认里面 `manifest.json` 的 `version` 与目标版本一致；**再确认
    `.output/chrome-mv3/manifest.json` 也是目标版本**（那份是 Chrome「加载已解压扩展」用的，
    曾经落后源码两个版本还没人发现）
-8. 提交、打 tag `v<version>`、推送到 GitHub（`origin` = github.com/lonemoonspace/KuaiKan）
-9. 用 `gh release create v<version> release/<version>/kuai-kan-<version>-chrome.zip` 发
+7. 提交、打 tag `v<version>`、推送到 GitHub（`origin` = github.com/lonemoonspace/KuaiKan）
+8. 用 `gh release create v<version> .output/kuai-kan-<version>-chrome.zip` 发
    GitHub Release，说明取自 `CHANGELOG.md` 对应版本条目
 
-最终保留两份产物：
-
-- 压缩包 `release/<version>/kuai-kan-<version>-chrome.zip`（归档 / 回滚用，同时附在
-  GitHub Release 上）
-- 解压版 `.output/chrome-mv3/`（Chrome 加载已解压扩展用）
-
-`release/` 里的 **zip 有意入库**；第 7 步解出来的 `release/**/kuai-kan-*-chrome/` 目录
-（只是校验副本）在 `.gitignore` 里，别再提交它。如果以后不想让归档进版本库，取消
-`.gitignore` 里那行 `# release/` 的注释即可。
+zip 分发的唯一权威渠道是 GitHub Release 附件；`release/` 目录已在 `.gitignore` 里，
+本地想留档可自行 `mkdir -p release/<version>` 拷贝，但不要提交。
 
 需要分析产物体积时用 `ANALYZE=1 npm run build`（输出 `.output/stats.html`，默认关闭，
 否则每次构建都会重写一个 ~1MB 的报告）。提交前跑一遍闸门即可，CI（`.github/workflows/quality.yml`）
