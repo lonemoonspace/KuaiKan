@@ -36,8 +36,5 @@ next/
 .agents
 .antigravitycli/
 
-# Release artifacts（如需本地归档不被 git 追踪，取消下一行注释）
-# release/
-# The zips are tracked on purpose (see AGENTS.md); the unpacked copies left
-# behind by the "verify the zip" release step are not source.
-release/**/kuai-kan-*-chrome/
+# Release artifacts：zip 统一由 GitHub Release 承载，本地 release/ 不再入库。
+release/
