@@ -43,6 +43,24 @@ describe('mergeImportedModels', () => {
     expect(mergeImportedModels(local, incoming)[0].apiKey).toBe('local-secret');
   });
 
+  // A default export blanks extraBody along with the credentials, so a plain
+  // export → import round trip used to reset every model's request parameters.
+  it('backfills extraBody when the import carries none for the same endpoint', () => {
+    const current = [modelRow({ extraBody: { reasoning_effort: 'high' } })];
+
+    expect(mergeImportedModels(current, [modelRow({ extraBody: {} })])[0].extraBody).toEqual({
+      reasoning_effort: 'high',
+    });
+    expect(
+      mergeImportedModels(current, [modelRow({ extraBody: { temperature: 0.2 } })])[0].extraBody,
+    ).toEqual({ temperature: 0.2 });
+    expect(
+      mergeImportedModels(current, [
+        modelRow({ baseURL: 'https://other.example.com/v1', extraBody: {} }),
+      ])[0].extraBody,
+    ).toEqual({});
+  });
+
   it('does not backfill when the baseURL changed', () => {
     const incoming = [modelRow({ baseURL: 'https://openrouter.ai/api/v1', apiKey: '', headers: {} })];
 

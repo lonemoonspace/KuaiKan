@@ -91,6 +91,23 @@ describe('flattenShadowAndIframeContent', () => {
     expect(flattened!.documentElement.textContent).toContain('framed article text');
   });
 
+  // The panel's own host has an open shadow root (WXT's default). Inlining it
+  // made a near-empty page "extract" the panel's UI and restored summary.
+  it("never inlines the extension's own panel", () => {
+    const document = createDocument('<webpage-summary-entrance></webpage-summary-entrance>');
+    attachArticleShadow(document.querySelector('webpage-summary-entrance')!, 'panel summary text');
+
+    expect(flattenShadowAndIframeContent(document)).toBeUndefined();
+
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    attachArticleShadow(host, 'shadow article text');
+
+    const flattened = flattenShadowAndIframeContent(document);
+    expect(flattened!.body.textContent).toContain('shadow article text');
+    expect(flattened!.body.textContent).not.toContain('panel summary text');
+  });
+
   it('skips an empty shadow root', () => {
     const document = createDocument('<div id="host"></div>');
     document.querySelector('#host')!.attachShadow({ mode: 'open' });

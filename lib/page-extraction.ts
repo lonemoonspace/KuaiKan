@@ -171,10 +171,23 @@ type VisibilityCheckable = Element & {
 
 function isInvisibleElement(element: Element): boolean {
   const checkable = element as VisibilityCheckable;
+  // `checkVisibility()` answers "does this element have a rendered box", which
+  // is false for two kinds of element that are perfectly readable:
+  //   - documents without a browsing context (the flattened clone from
+  //     lib/page-flatten.ts) never lay anything out, so *every* element there
+  //     would count as hidden and the winner's text would come back empty;
+  //   - `display: contents` wrappers have no box of their own by definition,
+  //     and dropping one removed its whole (visible) subtree.
+  // Both fall through to the inline checks; the children of a `contents`
+  // wrapper are still tested one by one.
+  const view = element.ownerDocument.defaultView;
 
-  if (typeof checkable.checkVisibility === 'function') {
+  if (view && typeof checkable.checkVisibility === 'function') {
     try {
-      return !checkable.checkVisibility({ checkOpacity: false, checkVisibilityCSS: true });
+      if (checkable.checkVisibility({ checkOpacity: false, checkVisibilityCSS: true })) {
+        return false;
+      }
+      return view.getComputedStyle(element).display !== 'contents';
     } catch {
       // Older engines: fall back to the inline checks below.
     }

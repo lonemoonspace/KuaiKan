@@ -39,6 +39,13 @@ export function registerPanelSnapshotMessages() {
       await storage.getItem<unknown>(getPanelSnapshotStorageKey(tabId)),
     );
 
+  const removePages = (tabId: number, pageKeys: string[]) =>
+    Promise.all(
+      pageKeys.map((pageKey) =>
+        storage.removeItem(getPanelPageSnapshotStorageKey(tabId, pageKey)),
+      ),
+    );
+
   onMessage('loadPanelSnapshot', ({ data, sender }) => {
     if (!isTrustedSender(sender)) return null;
 
@@ -67,28 +74,45 @@ export function registerPanelSnapshotMessages() {
 
     return serialize(async () => {
       const now = Date.now();
+      const indexKey = getPanelSnapshotStorageKey(tabId);
+      const pageStorageKey = getPanelPageSnapshotStorageKey(tabId, data.pageKey);
+      const previous = await storage.getItem<PanelSnapshot>(pageStorageKey);
+      // `applyPanelSnapshotPatch` also bounds the payload's size.
+      const snapshot = applyPanelSnapshotPatch(previous, data.patch, now);
       const { index, evicted } = applyPanelSnapshotIndexPatch(
         await readIndex(tabId),
         data.pageKey,
         now,
+        JSON.stringify(snapshot).length,
       );
-      const pageStorageKey = getPanelPageSnapshotStorageKey(tabId, data.pageKey);
-      const previous = await storage.getItem<PanelSnapshot>(pageStorageKey);
 
-      // `applyPanelSnapshotPatch` also bounds the payload's size.
-      await storage.setItem(
-        pageStorageKey,
-        applyPanelSnapshotPatch(previous, data.patch, now),
-      );
-      await storage.setItem(getPanelSnapshotStorageKey(tabId), index);
+      // Index first: tab-close cleanup only finds keys the index lists, so a
+      // payload written ahead of a failed index write leaked until the browser
+      // restarted. The other way round, a listed page whose payload write
+      // failed just loads as null. Evicted pages go only after the index
+      // stopped referencing them (a failed removal can leak a key but never
+      // drop a live snapshot), and before the new payload, to make room.
+      await storage.setItem(indexKey, index);
+      await removePages(tabId, evicted);
 
-      // Remove evicted pages only after the index stopped referencing them, so
-      // a failed removal can leak a key but can never drop a live snapshot.
-      await Promise.all(
-        evicted.map((pageKey) =>
-          storage.removeItem(getPanelPageSnapshotStorageKey(tabId, pageKey)),
-        ),
-      );
+      try {
+        await storage.setItem(pageStorageKey, snapshot);
+      } catch (e) {
+        // Most likely the quota every tab shares. Keeping this page's latest
+        // summary is worth more than this tab's older pages: drop those and
+        // try once more.
+        const others = index.pages
+          .map((page) => page.pageKey)
+          .filter((pageKey) => pageKey !== data.pageKey);
+        if (others.length === 0) throw e;
+
+        logger.warn('[panel-snapshot] Save failed; evicting older pages of the tab', e);
+        await storage.setItem(indexKey, {
+          pages: index.pages.filter((page) => page.pageKey === data.pageKey),
+        } satisfies PanelSnapshotIndex);
+        await removePages(tabId, others);
+        await storage.setItem(pageStorageKey, snapshot);
+      }
     }).catch((e) => logger.error('[panel-snapshot] Failed to save', e));
   });
 
@@ -97,8 +121,9 @@ export function registerPanelSnapshotMessages() {
       const index = await readIndex(tabId);
       await Promise.all([
         storage.removeItem(getPanelSnapshotStorageKey(tabId)),
-        ...index.pages.map((page) =>
-          storage.removeItem(getPanelPageSnapshotStorageKey(tabId, page.pageKey)),
+        removePages(
+          tabId,
+          index.pages.map((page) => page.pageKey),
         ),
       ]);
     }).catch((e) =>

@@ -139,7 +139,7 @@ ServerFrame:  { type: 'chunk'; chunk: UIMessageChunk } | { type: 'error'; messag
 动态键：`local:<storageKey>-floating-state`（`PanelContainer`）。
 
 面板快照：`session:panel-snapshots-<tabId>`（`browser.storage.session`，仅内存、重启浏览器即清空），
-`Record<pageKey, { open?, messages, updatedAt }>`（`open` 只在用户手动开关面板时写入，未写入时由「新页面自动打开面板」设置决定），每个标签页最多 20 个页面（LRU），标签页关闭时由后台删除。
+`Record<pageKey, { open?, messages, updatedAt }>`（`open` 只在用户手动开关面板时写入，未写入时由「新页面自动打开面板」设置决定），每个标签页最多 20 个页面、合计 512K 字符（LRU，超出从最旧的页驱逐），标签页关闭时由后台删除；后台先写索引再写分片，写分片失败（配额）时清掉本标签页其它页后重试一次。
 `pageKey` 是去掉页内锚点的 URL（`#/`、`#!` 开头的 hash 路由保留），见 `lib/panel-snapshot.ts`。
 content script 读不到 `storage.session` 也不知道自己的 tabId，所以一律经后台 RPC 读写；只存 assistant 消息，
 不存带整页正文的 system/user 消息。

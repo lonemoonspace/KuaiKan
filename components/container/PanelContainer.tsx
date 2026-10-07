@@ -30,6 +30,31 @@ function isHeaderReachable(el: HTMLElement): boolean {
   );
 }
 
+/**
+ * Put the saved geometry back on the panel, shrunk to fit the current
+ * viewport. A position saved on another monitor / window size can land the
+ * panel outside the viewport with no handle to drag it back; if the header is
+ * not reachable, fall back to the default anchor (keeping the size).
+ */
+function applyFloatingState(el: HTMLElement, state: FloatingState) {
+  const maxWidth = document.documentElement.clientWidth;
+  const maxHeight = document.documentElement.clientHeight;
+
+  el.style.width = `${Math.min(state.width, maxWidth)}px`;
+  el.style.height = `${Math.min(state.height, maxHeight)}px`;
+  el.style.left = state.left || '';
+  el.style.top = state.top || '';
+  el.style.right = state.right || '';
+  el.style.bottom = state.bottom || '';
+
+  if (!isHeaderReachable(el)) {
+    el.style.left = '';
+    el.style.top = '4em';
+    el.style.right = '4em';
+    el.style.bottom = '';
+  }
+}
+
 function UnifiedPanelRenderer({ children, storageKey }: { children: React.ReactNode, storageKey?: string | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -66,22 +91,7 @@ function UnifiedPanelRenderer({ children, storageKey }: { children: React.ReactN
     if (!el || !isFloatingLoaded) return;
 
     if (floatingState) {
-      el.style.width = `${floatingState.width}px`;
-      el.style.height = `${floatingState.height}px`;
-      el.style.left = floatingState.left || '';
-      el.style.top = floatingState.top || '';
-      el.style.right = floatingState.right || '';
-      el.style.bottom = floatingState.bottom || '';
-
-      // A position saved on another monitor / window size can land the panel
-      // outside the viewport with no handle to drag it back. If the header is
-      // not reachable, fall back to the default anchor (keeping the size).
-      if (!isHeaderReachable(el)) {
-        el.style.left = '';
-        el.style.top = '4em';
-        el.style.right = '4em';
-        el.style.bottom = '';
-      }
+      applyFloatingState(el, floatingState);
     } else {
       el.style.width = DEFAULT_PANEL_WIDTH;
       el.style.height = DEFAULT_PANEL_HEIGHT;
@@ -97,6 +107,12 @@ function UnifiedPanelRenderer({ children, storageKey }: { children: React.ReactN
   // viewport once the window shrinks (the snapshot is in px and is reused
   // across window sizes). The check above only runs when the snapshot is
   // applied, so without this the panel became unreachable until a reload.
+  //
+  // The correction is display-only and always starts from the saved geometry:
+  // persisting it (as an earlier version did) let a temporary shrink — a
+  // half-screen snap, docked DevTools — permanently overwrite the user's panel
+  // size and position, and wrote storage on every resize frame. Loading
+  // re-runs the same rescue, so the saved snapshot never has to be rewritten.
   useEffect(() => {
     const el = containerRef.current;
     if (!el || !isFloatingLoaded || !floatingState) return;
@@ -104,32 +120,7 @@ function UnifiedPanelRenderer({ children, storageKey }: { children: React.ReactN
     let frame = 0;
     const keepReachable = () => {
       frame = 0;
-
-      const maxWidth = document.documentElement.clientWidth;
-      const maxHeight = document.documentElement.clientHeight;
-
-      let corrected = false;
-      if (el.offsetWidth > maxWidth) {
-        el.style.width = `${maxWidth}px`;
-        corrected = true;
-      }
-      if (el.offsetHeight > maxHeight) {
-        el.style.height = `${maxHeight}px`;
-        corrected = true;
-      }
-
-      if (!isHeaderReachable(el)) {
-        el.style.left = '';
-        el.style.top = '4em';
-        el.style.right = '4em';
-        el.style.bottom = '';
-        corrected = true;
-      }
-
-      // Persist the correction. The snapshot is reused across window sizes, so
-      // without writing it back the panel snapped straight back to the
-      // unreachable geometry on the next load and had to be rescued again.
-      if (corrected) saveFloatingState();
+      applyFloatingState(el, floatingState);
     };
 
     const handleResize = () => {
@@ -144,7 +135,7 @@ function UnifiedPanelRenderer({ children, storageKey }: { children: React.ReactN
       window.removeEventListener('resize', handleResize);
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [isFloatingLoaded, floatingState, saveFloatingState]);
+  }, [isFloatingLoaded, floatingState]);
 
   if (!isFloatingLoaded) return null;
 

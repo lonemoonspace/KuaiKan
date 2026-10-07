@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { UIMessage } from 'ai';
 import {
   MAX_PANEL_MESSAGE_PART_CHARS,
+  MAX_PANEL_SNAPSHOT_CHARS,
+  MAX_PANEL_SNAPSHOT_CHARS_PER_TAB,
   MAX_PANEL_SNAPSHOTS_PER_TAB,
   PANEL_SNAPSHOT_TRUNCATION_MARKER,
   applyPanelSnapshotIndexPatch,
@@ -92,17 +94,17 @@ describe('parsePanelSnapshotIndex', () => {
   it('drops malformed entries and defaults a missing timestamp', () => {
     const index = parsePanelSnapshotIndex({
       pages: [
-        { pageKey: 'a', updatedAt: 5 },
+        { pageKey: 'a', updatedAt: 5, size: 42 },
         { pageKey: '', updatedAt: 1 },
         { pageKey: 3 },
         null,
-        { pageKey: 'b' },
+        { pageKey: 'b', size: -1 },
       ],
     });
 
     expect(index.pages).toEqual([
-      { pageKey: 'a', updatedAt: 5 },
-      { pageKey: 'b', updatedAt: 0 },
+      { pageKey: 'a', updatedAt: 5, size: 42 },
+      { pageKey: 'b', updatedAt: 0, size: 0 },
     ]);
   });
 });
@@ -110,10 +112,13 @@ describe('parsePanelSnapshotIndex', () => {
 describe('applyPanelSnapshotIndexPatch', () => {
   it('adds a page and refreshes an existing one without duplicating it', () => {
     const first = applyPanelSnapshotIndexPatch({ pages: [] }, 'a', 1);
-    expect(first).toEqual({ index: { pages: [{ pageKey: 'a', updatedAt: 1 }] }, evicted: [] });
+    expect(first).toEqual({
+      index: { pages: [{ pageKey: 'a', updatedAt: 1, size: 0 }] },
+      evicted: [],
+    });
 
-    const second = applyPanelSnapshotIndexPatch(first.index, 'a', 2);
-    expect(second.index.pages).toEqual([{ pageKey: 'a', updatedAt: 2 }]);
+    const second = applyPanelSnapshotIndexPatch(first.index, 'a', 2, 7);
+    expect(second.index.pages).toEqual([{ pageKey: 'a', updatedAt: 2, size: 7 }]);
     expect(second.evicted).toEqual([]);
   });
 
@@ -137,6 +142,7 @@ describe('applyPanelSnapshotIndexPatch', () => {
       pages: Array.from({ length: MAX_PANEL_SNAPSHOTS_PER_TAB }, (_, i) => ({
         pageKey: `page-${i}`,
         updatedAt: 1_000 + i,
+        size: 0,
       })),
     };
 
@@ -144,6 +150,37 @@ describe('applyPanelSnapshotIndexPatch', () => {
 
     expect(evicted).not.toContain('stale');
     expect(next.pages.some((page) => page.pageKey === 'stale')).toBe(true);
+  });
+});
+
+// The per-page cap alone allowed 20 × 128K chars per tab, and every tab
+// shares the same ~10 MB session quota.
+describe('applyPanelSnapshotIndexPatch size cap', () => {
+  it('evicts the oldest pages until the tab fits its total size budget', () => {
+    const third = Math.floor(MAX_PANEL_SNAPSHOT_CHARS_PER_TAB / 3);
+    let index: PanelSnapshotIndex = { pages: [] };
+    for (let i = 0; i < 3; i += 1) {
+      index = applyPanelSnapshotIndexPatch(index, `page-${i}`, i, third).index;
+    }
+
+    const { index: next, evicted } = applyPanelSnapshotIndexPatch(index, 'new', 10, third);
+
+    expect(evicted).toEqual(['page-0']);
+    expect(next.pages.map((page) => page.pageKey)).toEqual(['page-1', 'page-2', 'new']);
+  });
+
+  it('keeps the page being written even when it alone is over the budget', () => {
+    const index: PanelSnapshotIndex = { pages: [{ pageKey: 'old', updatedAt: 1, size: 10 }] };
+
+    const { index: next, evicted } = applyPanelSnapshotIndexPatch(
+      index,
+      'huge',
+      2,
+      MAX_PANEL_SNAPSHOT_CHARS_PER_TAB + 1,
+    );
+
+    expect(evicted).toEqual(['old']);
+    expect(next.pages.map((page) => page.pageKey)).toEqual(['huge']);
   });
 });
 
@@ -265,6 +302,37 @@ describe('fitPanelSnapshotToSize', () => {
     expect(JSON.stringify(fitted).length).toBeLessThan(
       JSON.stringify({ messages, updatedAt: 1 }).length,
     );
+  });
+
+  // Several parts each just under the per-part limit used to sail past the
+  // per-page cap untrimmed, because only whole older messages were dropped.
+  it('trims the newest message itself when it alone exceeds the cap', () => {
+    const near = 'y'.repeat(MAX_PANEL_MESSAGE_PART_CHARS - 10);
+    const only: UIMessage = {
+      id: 'only',
+      role: 'assistant',
+      parts: [
+        { type: 'reasoning', text: near },
+        { type: 'reasoning', text: near },
+        { type: 'reasoning', text: near },
+        { type: 'reasoning', text: near },
+        textPart('最终总结'),
+      ],
+    };
+
+    const fitted = fitPanelSnapshotToSize({ messages: [only], updatedAt: 1 });
+
+    expect(JSON.stringify(fitted).length).toBeLessThanOrEqual(MAX_PANEL_SNAPSHOT_CHARS);
+    expect(fitted.messages).toHaveLength(1);
+    const parts = fitted.messages[0].parts;
+    expect(parts).toHaveLength(5);
+    expect(parts[4]).toEqual(textPart('最终总结'));
+    expect(
+      parts.some(
+        (part) =>
+          part.type === 'reasoning' && part.text.endsWith(PANEL_SNAPSHOT_TRUNCATION_MARKER),
+      ),
+    ).toBe(true);
   });
 
   it('keeps the last message even when it alone exceeds the cap', () => {
