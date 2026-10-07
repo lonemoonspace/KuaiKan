@@ -30,7 +30,6 @@ import { useContentApp } from './useContentApp';
 import { UsageDisplay } from './UsageDisplay';
 import { ModelSelector } from './ModelSelector';
 import { getUiMessages } from '@/lib/i18n';
-import { getEffectiveInputTokenLimit } from '@/lib/input-token-limit';
 import {
   GENERAL_SETTING_DEFINITIONS,
   PANEL_FONT_SIZE_REM_PX,
@@ -142,10 +141,6 @@ export function ContentAppFrame({
 }: ContentAppFrameProps) {
   const uiMessages = getUiMessages();
   const [isTokenViewerOpen, setIsTokenViewerOpen] = useState(false);
-  const [enableTokenUsageView] = useWxtStorage<boolean>(
-    GENERAL_SETTING_DEFINITIONS.enableTokenUsageView.storageKey,
-    GENERAL_SETTING_DEFINITIONS.enableTokenUsageView.defaultValue as boolean
-  );
   // The token preview must dim the region that is actually discarded, which
   // depends on the configured truncation strategy.
   const [summaryInputExceedBehaviour] = useWxtStorage<SummaryInputExceedBehaviour>(
@@ -173,6 +168,8 @@ export function ContentAppFrame({
     currentModel,
     pageContent,
     pageContentTokenCount,
+    tokenUsageViewEnabled: enableTokenUsageView,
+    pageTextTokenLimit: effectiveTokenLimit,
     handleSummarize,
     beginSummary,
     handleModelIdChange,
@@ -194,10 +191,6 @@ export function ContentAppFrame({
       .join('\n\n');
     return citationMarkersToQuotes(text).trim();
   }, [assistantMessages]);
-  // Same budget the summary is actually truncated to.
-  const effectiveTokenLimit = currentModel
-    ? getEffectiveInputTokenLimit(currentModel)
-    : 0;
 
   // Fire beginSummary exactly once per trigger request. beginSummary is a
   // stable useCallback and the handled-request ref guards against later

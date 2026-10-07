@@ -80,15 +80,20 @@ describe('truncateByTokens', () => {
 
   // The marker costs ~12 tokens. A budget below that used to be clamped to
   // zero and then ignored, so the bare marker was returned -- a "truncated"
-  // result *longer* than the budget it was supposed to fit into.
-  it('"middle" returns nothing when only the marker would fit', async () => {
+  // result *longer* than the budget it was supposed to fit into. Returning ''
+  // instead sent the prompt with no page text at all; the head is kept.
+  it('"middle" keeps the head when only the marker would fit', async () => {
     const { countTokens } = await import('gpt-tokenizer/model/gpt-5');
     const markerTokens = countTokens(MIDDLE_TRUNCATION_MARKER);
 
-    for (const budget of [1, Math.floor(markerTokens / 2), markerTokens - 1]) {
-      await expect(truncateByTokens(LONG_TEXT, budget, 'middle')).resolves.toBe(
-        '',
-      );
+    for (const budget of [1, Math.floor(markerTokens / 2), markerTokens]) {
+      const [middle, front] = await Promise.all([
+        truncateByTokens(LONG_TEXT, budget, 'middle'),
+        truncateByTokens(LONG_TEXT, budget, 'front'),
+      ]);
+      expect(middle).toBe(front);
+      expect(middle.length).toBeGreaterThan(0);
+      expect(countTokens(middle)).toBeLessThanOrEqual(budget);
     }
 
     // A budget that can hold the marker plus real content still truncates.

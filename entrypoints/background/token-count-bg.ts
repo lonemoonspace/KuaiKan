@@ -91,10 +91,11 @@ function applyTruncationStrategy(
     const marker = MIDDLE_TRUNCATION_MARKER;
     // The marker counts against the budget so the result never exceeds it.
     const budget = Math.max(0, maxTokens - tokenizer.countTokens(marker));
-    // The marker alone costs ~12 tokens, so a budget below that leaves nothing:
-    // returning the bare marker (the previous behaviour) sent *more* tokens
-    // than the caller asked for -- exactly what truncation must prevent.
-    if (budget === 0) return '';
+    // The marker alone costs ~12 tokens, so a budget at or below that has no
+    // room for it: returning the bare marker sent *more* tokens than the caller
+    // asked for, and returning '' sent the prompt with no page text at all.
+    // Keep the head instead, exactly as `front` would.
+    if (budget === 0) return tokenizer.decode(tokens.slice(0, maxTokens));
     const headTokens = Math.floor(budget / 2);
     const tailTokens = budget - headTokens;
     const head = tokenizer.decode(tokens.slice(0, headTokens));

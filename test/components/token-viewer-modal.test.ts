@@ -35,8 +35,8 @@ describe('isTokenKept', () => {
     expect(keptIndexes(10, 6, 'middle', 2)).toEqual([0, 1, 8, 9]);
   });
 
-  it('keeps nothing when the marker alone eats the whole budget', () => {
-    expect(keptIndexes(10, 4, 'middle', 4)).toEqual([]);
-    expect(keptIndexes(10, 4, 'middle', 99)).toEqual([]);
+  it('keeps the head, like the background, when the marker alone eats the whole budget', () => {
+    expect(keptIndexes(10, 4, 'middle', 4)).toEqual([0, 1, 2, 3]);
+    expect(keptIndexes(10, 4, 'middle', 99)).toEqual([0, 1, 2, 3]);
   });
 });
