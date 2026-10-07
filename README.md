@@ -34,7 +34,7 @@ npm run build
 ## 版本归档
 
 每个发布版本的 zip 存放在 `release/<version>/`，用于回滚或在另一台机器上安装
-（在 `chrome://extensions` 里把 zip 解压后按上面的步骤加载）。当前版本 **3.1.3**。
+（在 `chrome://extensions` 里把 zip 解压后按上面的步骤加载）。当前版本 **3.1.4**。
 
 发布步骤见 [AGENTS.md](AGENTS.md) 的「构建与发布」一节。
 
