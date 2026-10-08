@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="./assets/16.png" width="26" alt="KuaiKan logo"/>
+  <img src="./assets/logo.svg" width="26" alt="KuaiKan logo"/>
   KuaiKan 快看
 </h1>
 
@@ -104,9 +104,10 @@ npm run lint      # ESLint
 
 ## 致谢
 
-本项目是 [ctxinf/webpage-summary](https://github.com/ctxinf/webpage-summary) 的 fork，
-针对个人使用场景做了大量精简与重写；灵感同时来自
-[chatGPTBox](https://github.com/josStorer/chatGPTBox)。
+本项目基于 [ctxinf/webpage-summary](https://github.com/ctxinf/webpage-summary)（MIT）修改而来，
+针对个人使用场景做了大量精简与重写，原版权声明保留在 [LICENSE](LICENSE)。
+灵感同时来自 [chatGPTBox](https://github.com/josStorer/chatGPTBox)，未复制其代码。
+第三方素材的来源与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## License
 

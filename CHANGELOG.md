@@ -1,4 +1,8 @@
 # Changelog
+## [Unreleased]
+1. change: 更换扩展图标为原创的「闪电文档」黑白图标（源文件 `assets/logo.svg`），顺带修正 `16.png` 实际是 48×48 的问题
+2. docs: `LICENSE` 补充本项目版权行，README 致谢写明上游与许可，新增 `THIRD_PARTY_NOTICES.md` 说明模型供应商图标的来源与商标归属
+
 ## [3.1.4]
 第三轮代码审查（基线 `5bf6408..2e061f1`，即 v3.1.3 本身）发现的 10 项问题全部修复，测试 279 → 286 例。
 
