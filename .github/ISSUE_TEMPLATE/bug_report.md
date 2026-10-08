@@ -18,7 +18,7 @@ labels: bug
 
 **环境**
 - 浏览器及版本：[例如 Chrome 131]
-- 扩展版本：[例如 3.1.4，见 chrome://extensions]
+- 扩展版本：[例如 3.1.5，见 chrome://extensions]
 - 模型服务商 / 模型：[例如 OpenAI Compatible / deepseek-chat]
 - 正文提取方式 / 裁剪策略（如相关）：
 
